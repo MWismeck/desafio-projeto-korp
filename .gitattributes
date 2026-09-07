@@ -1,4 +1,4 @@
-#.gitattributes — normalização de fim de linha (host Windows + scripts bash)..
+# .gitattributes — normalização de fim de linha (host Windows + scripts bash).
 * text=auto eol=lf
 *.sh   text eol=lf
 *.py   text eol=lf

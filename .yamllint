@@ -1,4 +1,4 @@
-#.yamllint — regras do projeto (as mesmas do gate local): 160 colunas, truthy só com true/false/yes/no.
+# .yamllint — regras do projeto (as mesmas do gate local): 160 colunas, truthy só com true/false/yes/no.
 extends: default
 rules:
   # series dos testes do Prometheus sao uma unica palavra longa (labels sem espaco): nao quebravel

@@ -73,14 +73,14 @@ groups:
   - name: http-server-projeto-korp.external.alerts
     rules:
       # ---------- O caminho do usuário está quebrado, mas o APP está são ----------
-      # `probe_success == 0 and on service_up == 1` é o alerta que separa "aplicação caiu" de
+      # `probe_success == 0 and on () service_up == 1` é o alerta que separa "aplicação caiu" de
       # "borda caiu": se o app se declara pronto e a sonda através do NGINX falha, o defeito está no
       # NGINX/rede/proxy_pass — TargetDown e ServiceUnavailable ficam calados nesse cenário.
       # Métrica crua é aceita aqui pelo mesmo motivo de `up`/`service_up`.
       - alert: UserPathUnavailable
         expr: |
           probe_success{job="blackbox-http"} == 0
-          and on 
+          and on ()
           service_up{job="http-server-projeto-korp"} == 1
         for: 1m
         labels:

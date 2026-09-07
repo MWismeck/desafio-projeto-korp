@@ -4,7 +4,7 @@ status: canonical
 updated: 2026-09-06
 owner: SRE/On-call (Architect cura)
 consumers: [SRE/On-call, Incident Commander, Executor]
-related: [../DECISOES_TECNICAS.md,../../observability/prometheus/rules/]
+related: [../DECISOES_TECNICAS.md,../.../observability/prometheus/rules/]
 ---
 
 # ALERT RUNBOOKS — um por alerta

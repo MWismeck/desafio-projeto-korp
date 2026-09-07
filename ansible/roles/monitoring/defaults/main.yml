@@ -1,5 +1,5 @@
 # roles/monitoring/defaults/main.yml — variáveis sobrescrevíveis da role de monitoramento
-#.
+# .
 #
 # `project_root` e `compose_profiles` são variáveis do PLAYBOOK (quatro roles as leem) e moram em
 # ansible/group_vars/all.yml — não são redefinidas aqui para não criar duas fontes de verdade.

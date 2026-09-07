@@ -2,7 +2,7 @@
   "id": null,
   "uid": "http-server-projeto-korp",
   "title": "http-server-projeto-korp · RED",
-  "description": "Disponibilidade, volume de requisições, erros, latência e saturação do http-server-projeto-korp (Desafio Korp /23/29). O painel de latência publica exemplars: clique no losango para abrir o trace no Tempo e, de lá, os logs no Loki e o perfil de CPU no Pyroscope. Runbooks: https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md",
+  "description": "Disponibilidade, volume de requisições, erros, latência e saturação do http-server-projeto-korp (Desafio Korp /23/29). O painel de latência publica exemplars: clique no losango para abrir o trace no Tempo e, de lá, os logs no Loki e o perfil de CPU no Pyroscope. Runbooks: .agents/runbooks/ALERT_RUNBOOKS.md",
   "tags": ["korp", "red", "go", "prometheus"],
   "timezone": "utc",
   "editable": false,
@@ -12,13 +12,15 @@
   "refresh": "30s",
   "time": { "from": "now-1h", "to": "now" },
   "timepicker": { "refresh_intervals": ["10s", "30s", "1m", "5m"] },
-  "links": [{ "title": "Runbooks de alerta", "type": "link", "icon": "doc", "url": "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md", "targetBlank": true },
+  "links": [
+    { "title": "Runbooks de alerta", "type": "link", "icon": "doc", "url": "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md", "targetBlank": true },
     { "title": "Dashboards do Korp", "type": "dashboards", "tags": ["korp"], "asDropdown": true, "includeVars": true, "keepTime": true },
     { "title": "Saúde de container e host", "type": "link", "icon": "cloud", "url": "/d/korp-container-health?${__url_time_range}", "targetBlank": false },
     { "title": "Borda e caminho do usuário", "type": "link", "icon": "external link", "url": "/d/korp-edge?${__url_time_range}", "targetBlank": false }
   ],
   "templating": {
-    "list": [{
+    "list": [
+      {
         "type": "datasource",
         "name": "DS_PROMETHEUS",
         "label": "Prometheus",
@@ -27,7 +29,7 @@
         "hide": 0,
         "refresh": 1,
         "regex": "",
-        "options": 
+        "options": []
       },
       {
         "type": "query",
@@ -41,7 +43,7 @@
         "includeAll": false,
         "multi": false,
         "sort": 1,
-        "options": 
+        "options": []
       },
       {
         "type": "query",
@@ -57,12 +59,13 @@
         "allValue": ".+",
         "multi": true,
         "sort": 1,
-        "options": 
+        "options": []
       }
     ]
   },
   "annotations": {
-    "list": [{
+    "list": [
+      {
         "builtIn": 1,
         "datasource": { "type": "grafana", "uid": "-- Grafana --" },
         "enable": true,
@@ -95,26 +98,27 @@
       }
     ]
   },
-  "panels": [{ "type": "row", "id": 100, "title": "Disponibilidade & volume", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels":  },
+  "panels": [
+    { "type": "row", "id": 100, "title": "Disponibilidade & volume", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 }, "panels": [] },
     {
       "type": "stat", "id": 1, "title": "Target UP (Prometheus)",
       "description": "min(up) — o Prometheus consegue coletar /metrics de TODAS as réplicas? 1 = sim. Usa min (e não max) para que uma réplica caída apareça. 0 por 1 min dispara TargetDown.",
       "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "min(up{job=~\"$service\"})", "instant": true, "legendFormat": "up" } ],
-      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "noValue": "sem dado", "mappings": [{ "type": "value", "options": { "0": { "text": "DOWN", "color": "red", "index": 0 }, "1": { "text": "UP", "color": "green", "index": 1 } } } ], "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 } ] } }, "overrides":  },
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "noValue": "sem dado", "mappings": [ { "type": "value", "options": { "0": { "text": "DOWN", "color": "red", "index": 0 }, "1": { "text": "UP", "color": "green", "index": 1 } } } ], "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "background", "graphMode": "none", "textMode": "value" },
-      "links": [{ "title": "Runbook TargetDown", "url": "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#targetdown", "targetBlank": true } ]
+      "links": [ { "title": "Runbook TargetDown", "url": "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#targetdown", "targetBlank": true } ]
     },
     {
       "type": "stat", "id": 2, "title": "service_up (readiness do app)",
-      "description": "Gauge autodeclarado pelo serviço: 1 quando pronto para atender; 0 no boot e durante a drenagem do SIGTERM. min expõe a réplica em drenagem. Alerta associado: ServiceUnavailable.",
+      "description": "Gauge autodeclarado pelo serviço: 1 quando pronto para atender; 0 no boot e durante a drenagem do SIGTERM. min() expõe a réplica em drenagem. Alerta associado: ServiceUnavailable.",
       "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "min(service_up{service=\"$service\"})", "instant": true, "legendFormat": "service_up" } ],
-      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "noValue": "sem dado", "mappings": [{ "type": "value", "options": { "0": { "text": "INDISPONÍVEL", "color": "red", "index": 0 }, "1": { "text": "DISPONÍVEL", "color": "green", "index": 1 } } } ], "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "green", "value": 1 } ] } }, "overrides":  },
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "noValue": "sem dado", "mappings": [ { "type": "value", "options": { "0": { "text": "INDISPONÍVEL", "color": "red", "index": 0 }, "1": { "text": "DISPONÍVEL", "color": "green", "index": 1 } } } ], "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "green", "value": 1 } ] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "background", "graphMode": "none", "textMode": "value" },
-      "links": [{ "title": "Runbook ServiceUnavailable", "url": "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#serviceunavailable", "targetBlank": true } ]
+      "links": [ { "title": "Runbook ServiceUnavailable", "url": "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#serviceunavailable", "targetBlank": true } ]
     },
     {
       "type": "stat", "id": 3, "title": "Disponibilidade 30d (SLI)",
@@ -122,20 +126,20 @@
       "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "service:sli_availability:ratio_rate30d{service=\"$service\"}", "instant": true, "legendFormat": "SLI 30d" } ],
-      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 3, "min": 0, "max": 1, "noValue": "sem tráfego", "thresholds": { "mode": "absolute", "steps": [{ "color": "red", "value": null }, { "color": "orange", "value": 0.995 }, { "color": "green", "value": 0.999 } ] } }, "overrides":  },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 3, "min": 0, "max": 1, "noValue": "sem tráfego", "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "orange", "value": 0.995 }, { "color": "green", "value": 0.999 } ] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none", "textMode": "value" },
       "links": [ { "title": "SLO overview", "url": "/d/slo-overview?${__url_time_range}", "targetBlank": false } ]
     },
     {
       "type": "stat", "id": 4, "title": "Volume de requisições (período)",
-      "description": "Total de requisições atendidas no intervalo selecionado — increase(http_requests_total[$__range]). É o volume exigido pelo; zero aqui na demo significa que falta gerar carga.",
+      "description": "Total de requisições atendidas no intervalo selecionado — increase(http_requests_total[$__range]). É o volume exigido pelo ; zero aqui na demo significa que falta gerar carga.",
       "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(increase(http_requests_total{service=\"$service\"}[$__range]))", "instant": true, "legendFormat": "requisições" } ],
-      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "min": 0, "noValue": "sem tráfego", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null } ] } }, "overrides":  },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "min": 0, "noValue": "sem tráfego", "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "area", "textMode": "value" }
     },
-    { "type": "row", "id": 101, "title": "RED — taxa, erros, duração", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 }, "panels":  },
+    { "type": "row", "id": 101, "title": "RED — taxa, erros, duração", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 }, "panels": [] },
     {
       "type": "timeseries", "id": 5, "title": "Requisições/s por código",
       "description": "sum by (code) (rate(http_requests_total[$__rate_interval])) — volume por classe de status. Faixa vermelha crescendo = 5xx: olhe o painel de taxa de erro ao lado antes de investigar latência.",
@@ -151,31 +155,32 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 7 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "1 - service:sli_availability:ratio_rate5m{service=\"$service\"}", "legendFormat": "erro 5m" } ],
-      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 3, "min": 0, "noValue": "sem tráfego", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "thresholdsStyle": { "mode": "line" } }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.001 }, { "color": "red", "value": 0.0144 } ] } }, "overrides":  },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 3, "min": 0, "noValue": "sem tráfego", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "thresholdsStyle": { "mode": "line" } }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.001 }, { "color": "red", "value": 0.0144 } ] } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "links": [{ "title": "Runbook ServiceHighErrorRateBurn", "url": "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicehigherrorrateburn", "targetBlank": true } ]
+      "links": [ { "title": "Runbook ServiceHighErrorRateBurn", "url": "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicehigherrorrateburn", "targetBlank": true } ]
     },
     {
       "type": "timeseries", "id": 7, "title": "Latência p50 / p95 / p99 (com exemplars)",
       "description": "histogram_quantile sobre sum by (le) (rate(http_request_duration_seconds_bucket[$__rate_interval])). Objetivo: p95 < 300 ms (linha vermelha). Os losangos são EXEMPLARS — clique em um para abrir no Tempo o trace exato daquela requisição lenta e, de lá, seus logs (Loki) e o perfil de CPU (Pyroscope).",
       "gridPos": { "h": 8, "w": 8, "x": 16, "y": 7 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket{service=\"$service\"}[$__rate_interval])))", "legendFormat": "p50" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.50, sum by (le) (rate(http_request_duration_seconds_bucket{service=\"$service\"}[$__rate_interval])))", "legendFormat": "p50" },
         { "refId": "B", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.95, sum by (le) (rate(http_request_duration_seconds_bucket{service=\"$service\"}[$__rate_interval])))", "legendFormat": "p95" },
         { "refId": "C", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "histogram_quantile(0.99, sum by (le) (rate(http_request_duration_seconds_bucket{service=\"$service\"}[$__rate_interval])))", "legendFormat": "p99" }
       ],
-      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3, "min": 0, "noValue": "sem tráfego", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0, "spanNulls": false, "thresholdsStyle": { "mode": "line+area" } }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "red", "value": 0.3 } ] } }, "overrides":  },
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 3, "min": 0, "noValue": "sem tráfego", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0, "spanNulls": false, "thresholdsStyle": { "mode": "line+area" } }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "red", "value": 0.3 } ] } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
-      "links": [{ "title": "Runbook ServiceHighLatencyBurn", "url": "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicehighlatencyburn", "targetBlank": true } ]
+      "links": [ { "title": "Runbook ServiceHighLatencyBurn", "url": "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicehighlatencyburn", "targetBlank": true } ]
     },
-    { "type": "row", "id": 102, "title": "Saturação (USE)", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 }, "panels":  },
+    { "type": "row", "id": 102, "title": "Saturação (USE)", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 15 }, "panels": [] },
     {
       "type": "timeseries", "id": 8, "title": "Goroutines",
       "description": "go_goroutines por réplica. Crescimento monótono que não cai depois do pico de carga indica vazamento de goroutine.",
       "gridPos": { "h": 7, "w": 6, "x": 0, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "go_goroutines{service=\"$service\",instance=~\"$instance\"}", "legendFormat": "{{instance}}" } ],
-      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "min": 0, "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false } }, "overrides":  },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "min": 0, "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } }
     },
     {
@@ -183,10 +188,11 @@
       "description": "process_resident_memory_bytes e go_memstats_heap_inuse_bytes por réplica. Compare com working set / limite no dashboard de saúde de container: RSS encostando no limite antecede OOMKill.",
       "gridPos": { "h": 7, "w": 6, "x": 6, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "process_resident_memory_bytes{service=\"$service\",instance=~\"$instance\"}", "legendFormat": "RSS {{instance}}" },
+      "targets": [
+        { "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "process_resident_memory_bytes{service=\"$service\",instance=~\"$instance\"}", "legendFormat": "RSS {{instance}}" },
         { "refId": "B", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "go_memstats_heap_inuse_bytes{service=\"$service\",instance=~\"$instance\"}", "legendFormat": "heap {{instance}}" }
       ],
-      "fieldConfig": { "defaults": { "unit": "bytes", "decimals": 1, "min": 0, "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false } }, "overrides":  },
+      "fieldConfig": { "defaults": { "unit": "bytes", "decimals": 1, "min": 0, "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "links": [ { "title": "Saúde de container e host", "url": "/d/korp-container-health?${__url_time_range}", "targetBlank": false } ]
     },
@@ -196,7 +202,7 @@
       "gridPos": { "h": 7, "w": 6, "x": 12, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "rate(process_cpu_seconds_total{service=\"$service\",instance=~\"$instance\"}[$__rate_interval])", "legendFormat": "{{instance}}" } ],
-      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 2, "min": 0, "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "thresholdsStyle": { "mode": "line" } }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.7 }, { "color": "red", "value": 0.9 } ] } }, "overrides":  },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 2, "min": 0, "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "thresholdsStyle": { "mode": "line" } }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.7 }, { "color": "red", "value": 0.9 } ] } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } }
     },
     {
@@ -205,16 +211,16 @@
       "gridPos": { "h": 7, "w": 6, "x": 18, "y": 16 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(http_requests_in_flight{service=\"$service\",instance=~\"$instance\"})", "legendFormat": "em voo" } ],
-      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "min": 0, "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false } }, "overrides":  },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "min": 0, "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } }
     },
     {
       "type": "timeseries", "id": 13, "title": "Descritores de arquivo em uso",
-      "description": "process_open_fds / process_max_fds. Acima de 0,7 (laranja) investigue conexões não fechadas; em 1,0 o accept passa a falhar e o serviço fica indisponível sem cair.",
+      "description": "process_open_fds / process_max_fds. Acima de 0,7 (laranja) investigue conexões não fechadas; em 1,0 o accept() passa a falhar e o serviço fica indisponível sem cair.",
       "gridPos": { "h": 6, "w": 12, "x": 0, "y": 23 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "process_open_fds{service=\"$service\",instance=~\"$instance\"} / process_max_fds{service=\"$service\",instance=~\"$instance\"}", "legendFormat": "{{instance}}" } ],
-      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 3, "min": 0, "max": 1, "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "thresholdsStyle": { "mode": "line" } }, "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 0.7 }, { "color": "red", "value": 0.9 } ] } }, "overrides":  },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 3, "min": 0, "max": 1, "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "thresholdsStyle": { "mode": "line" } }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.7 }, { "color": "red", "value": 0.9 } ] } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } }
     },
     {
@@ -223,26 +229,26 @@
       "gridPos": { "h": 6, "w": 12, "x": 12, "y": 23 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "go_gc_duration_seconds{service=\"$service\",instance=~\"$instance\",quantile=~\"0.75|1\"}", "legendFormat": "q{{quantile}} {{instance}}" } ],
-      "fieldConfig": { "defaults": { "unit": "s", "decimals": 4, "min": 0, "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0, "spanNulls": false } }, "overrides":  },
+      "fieldConfig": { "defaults": { "unit": "s", "decimals": 4, "min": 0, "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 0, "spanNulls": false } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } }
     },
-    { "type": "row", "id": 103, "title": "Build e ciclo de vida", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 }, "panels":  },
+    { "type": "row", "id": 103, "title": "Build e ciclo de vida", "collapsed": false, "gridPos": { "h": 1, "w": 24, "x": 0, "y": 29 }, "panels": [] },
     {
       "type": "stat", "id": 11, "title": "Versão em execução (korp_build_info)",
       "description": "Labels version/commit do gauge korp_build_info — confirma QUAL build está no ar. Mais de um valor aqui significa deploy parcial entre réplicas.",
       "gridPos": { "h": 4, "w": 8, "x": 0, "y": 30 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "max by (version, commit) (korp_build_info{service=\"$service\"})", "legendFormat": "{{version}} ({{commit}})", "instant": true } ],
-      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "noValue": "korp_build_info ausente", "thresholds": { "mode": "absolute", "steps": [{ "color": "blue", "value": null } ] } }, "overrides":  },
+      "fieldConfig": { "defaults": { "unit": "none", "decimals": 0, "noValue": "korp_build_info ausente", "thresholds": { "mode": "absolute", "steps": [ { "color": "blue", "value": null } ] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "none", "graphMode": "none", "textMode": "name" }
     },
     {
       "type": "stat", "id": 15, "title": "Uptime do processo",
-      "description": "time − process_start_time_seconds. Uptime baixo logo após um incidente = o processo reiniciou; cruze com a anotação laranja de restart e com os eventos de OOM no dashboard de saúde.",
+      "description": "time() − process_start_time_seconds. Uptime baixo logo após um incidente = o processo reiniciou; cruze com a anotação laranja de restart e com os eventos de OOM no dashboard de saúde.",
       "gridPos": { "h": 4, "w": 8, "x": 8, "y": 30 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
-      "targets": [{ "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "min(time - process_start_time_seconds{service=\"$service\"})", "instant": true, "legendFormat": "uptime" } ],
-      "fieldConfig": { "defaults": { "unit": "dtdurations", "decimals": 0, "noValue": "sem dado", "thresholds": { "mode": "absolute", "steps": [{ "color": "orange", "value": null }, { "color": "green", "value": 300 } ] } }, "overrides":  },
+      "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "min(time() - process_start_time_seconds{service=\"$service\"})", "instant": true, "legendFormat": "uptime" } ],
+      "fieldConfig": { "defaults": { "unit": "dtdurations", "decimals": 0, "noValue": "sem dado", "thresholds": { "mode": "absolute", "steps": [ { "color": "orange", "value": null }, { "color": "green", "value": 300 } ] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none", "textMode": "value" }
     },
     {
@@ -251,7 +257,7 @@
       "gridPos": { "h": 4, "w": 8, "x": 16, "y": 30 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "sum(changes(process_start_time_seconds{service=\"$service\"}[$__range]))", "instant": true, "legendFormat": "restarts" } ],
-      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "min": 0, "noValue": "0", "thresholds": { "mode": "absolute", "steps": [{ "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 3 } ] } }, "overrides":  },
+      "fieldConfig": { "defaults": { "unit": "short", "decimals": 0, "min": 0, "noValue": "0", "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 1 }, { "color": "red", "value": 3 } ] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none", "textMode": "value" }
     }
   ]
