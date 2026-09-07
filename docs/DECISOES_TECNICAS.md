@@ -22,8 +22,8 @@ consiga verificar.
   requisição, empacotado numa imagem Alpine não-root de poucos MB, atrás de um NGINX oficial na porta 80,
   numa rede bridge fechada onde o app não publica porta nenhuma.
 - **Parte 2.** Métricas no padrão Prometheus (disponibilidade e volume, mais latência e erros), Prometheus
-  e Grafana provisionados por arquivo, dashboard versionado, e, como bônus, um stack completo de
-  observabilidade correlacionada num perfil opcional do Compose.
+  e Grafana provisionados por arquivo, dashboards versionados, regras de alerta com teste, e um punhado de
+  exporters num perfil opcional do Compose.
 - **Parte 3.** Um playbook Ansible com seis roles que instala o Docker, cria a rede, constrói a imagem,
   sobe o Compose, valida o NGINX e o monitoramento, e termina exibindo a resposta do serviço. Um comando,
   idempotente.
@@ -38,9 +38,9 @@ cliente ──:80──▶ nginx (imagem oficial) ──korp-net──▶ http-s
                      grafana:3000 (dashboards provisionados)
 ```
 
-Perfil padrão do Compose: exatamente os quatro serviços acima. Perfil `full`: mais dez componentes
-(§6). A separação existe para que o comando que o avaliador executa tenha o menor número possível de
-peças que podem falhar.
+Perfil padrão do Compose: exatamente os quatro serviços acima. Perfil `full`: mais cinco componentes
+opcionais (§6). A separação existe para que o comando avaliado tenha o menor número possível de peças que
+podem falhar.
 
 ### 1.3 Princípios que guiaram as decisões
 
@@ -63,15 +63,13 @@ peças que podem falhar.
 | `log/slog` | stdlib | logs JSON | Zero dependência, JSON nativo, handler customizado injeta `trace_id` e `request_id`. `zap` e `zerolog` são mais rápidos, mas o ganho é irrelevante neste volume e o custo é uma API própria. |
 | `github.com/prometheus/client_golang` | ver `go.mod` | `/metrics` | É literalmente "o padrão do Prometheus" que o brief pede: controle total de nomes, buckets e exemplars. OTel Metrics com exporter Prometheus reescreve nomes e muda a semântica do histograma. |
 | `github.com/sethvargo/go-envconfig` | ver `go.mod` | configuração por env | Struct com tags, defaults e validação explícita no boot. `viper` traz `mapstructure`, `fsnotify` e precedência implícita; `koanf` resolve múltiplas fontes, problema que não existe aqui. |
-| `go.opentelemetry.io/otel` + `otelhttp` | ver `go.mod` | traces (opcional, desligado por padrão) | Único padrão vivo de tracing; OpenTracing e OpenCensus estão depreciados. Fica no perfil `full` para não complicar a demonstração. |
-| `github.com/grafana/pyroscope-go` | ver `go.mod` | perfilamento contínuo (opcional) | Push do SDK em vez de pull de `/debug/pprof`, que exigiria expor esse endpoint na rede. |
 | `github.com/swaggo/swag` + `http-swagger` | ver `go.mod` | documentação da API em `/swagger/` | Padrão de fato em Go: anotações no handler geram a spec, e o CI falha se ela estiver desatualizada. Alternativa contrato-primeiro com `oapi-codegen` geraria mais código que o serviço inteiro. |
 | Docker Engine + Compose v2 | 27+ / v2 | build e execução | Exigidos pelo brief. |
 | Imagem de build | `golang:1.24` | Dockerfile, estágio 1 | Toolchain oficial; o binário sai estático com `CGO_ENABLED=0`. |
 | Imagem de runtime | `alpine:3.20` | Dockerfile, estágio 2 | Ver §3.2: shell para diagnóstico em campo, ao custo de uma superfície um pouco maior que a do distroless. |
 | `nginx` | `nginx:1.27-alpine` | proxy reverso | Exigido pelo brief como imagem oficial; a variante Alpine é a mesma distribuição oficial, menor. |
 | `prom/prometheus` | `v3.5.0` | coleta e regras | Série 3.x atual; `promtool` da mesma imagem valida config e regras no CI. |
-| `grafana/grafana` | `11.3.0` | visualização | Suporta provisioning de datasources com correlação entre métrica, trace, log e perfil. |
+| `grafana/grafana` | `11.3.0` | visualização | Provisioning de datasources e dashboards por arquivo, que é o diferencial citado pelo desafio. |
 | `ansible-core` + `community.docker` | 2.17+ / 4.x | provisionamento | Módulos declarativos com idempotência real e suporte a `--check`. `shell: docker …` sempre reporta mudança e esconde erro. |
 | `golangci-lint`, `gosec`, `govulncheck` | fixados no CI | qualidade e segurança do Go | Lint, análise estática de segurança e vulnerabilidades conhecidas nas dependências. |
 | `hadolint`, `trivy`, `gitleaks` | fixados no CI | imagem, dependências, segredos | Cada um cobre uma camada: Dockerfile, CVEs, segredo vazado no histórico. |
@@ -210,16 +208,21 @@ deixam sem resposta.
   de disponibilidade, e a única que enxerga a borda.
 - **Saúde de container e host.** cAdvisor e node-exporter, com limites de recurso declarados em todos os
   serviços, porque sem quota o throttling nunca ocorre e a razão de saturação vira infinito.
-- **Os quatro pilares correlacionados.** Traces no Tempo, logs no Loki, perfis no Pyroscope, e as
-  ligações entre eles configuradas: do exemplar no painel de latência para o trace, do trace para os logs
-  do mesmo `trace_id`, e dali para o perfil de CPU. Quatro pilares sem essas ligações são quatro silos.
+- **Saturação na borda.** O `nginx-exporter` lendo `stub_status` responde uma pergunta que nenhuma métrica
+  do app responde: conexão aceita e descartada antes de chegar ao serviço.
 - **Quem vigia o vigia.** Alertas para reload de configuração que falhou, regra que não avalia, e
   notificação que não sai, porque nesse caso todos os outros alertas ficam mudos.
 - **Runbooks.** Cada alerta aponta para uma seção de `docs/runbooks/ALERT_RUNBOOKS.md` com mitigação antes
   de causa.
 
 Tudo isso vive no perfil `full` do Compose, subido pelo mesmo playbook com uma variável a mais. O
-avaliador vê primeiro o mínimo do brief funcionando; o resto é o segundo ato.
+avaliador vê primeiro o mínimo do desafio funcionando; o resto é opcional.
+
+**O que deliberadamente ficou de fora.** Backend de traces, de logs e de perfis (Tempo, Loki, Alloy,
+Pyroscope) e o OpenTelemetry Collector. Eles resolvem problemas reais, e eu opero esse conjunto em
+produção, mas aqui custariam dez containers e um pipeline inteiro para um serviço de um endpoint. A
+complexidade não se pagaria e multiplicaria o que pode falhar na demonstração. Sei explicar como cada
+peça entra quando o volume justificar.
 
 ## 7. Como validar tudo
 

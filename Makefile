@@ -19,7 +19,7 @@ run: build ## roda o binário local na porta do.env.example
 	
 
 test: ## testes com detector de corrida e cobertura
-	go test -race -shuffle=on -count=1 -coverprofile=coverage.out ./...
+	go test -race -shuffle=on -count=1 -coverpkg=./internal/... -coverprofile=coverage.out ./...
 	go tool cover -func=coverage.out | tail -1
 
 lint: ## go vet + golangci-lint
@@ -31,7 +31,7 @@ sec: ## gosec + govulncheck
 	govulncheck ./...
 
 swagger: ## regenera api/ a partir das anotações
-	swag init -g cmd/$(APP)/main.go -o api
+	swag init -g cmd/$(APP)/main.go -o api --packageName api --parseInternal
 
 swagger-check: swagger ## falha se api/ estiver desatualizada (mesmo check do CI)
 	git diff --exit-code -- api/
@@ -41,10 +41,10 @@ check: lint test sec swagger-check promtool-test ## tudo que o CI verifica, loca
 docker: ## imagem local
 	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t $(APP):$(VERSION)  .
 
-up: ## stack mínima do brief (app + nginx + prometheus + grafana)
+up: ## os quatro serviços do desafio (app + nginx + prometheus + grafana)
 	VERSION=$(VERSION) docker compose up -d --build --wait
 
-up-full: ## stack estendido: + alertmanager, otel-collector, tempo, loki, alloy, pyroscope, cadvisor, node-exporter, blackbox, nginx-exporter
+up-full: ## + alertmanager, cadvisor, node-exporter, blackbox-exporter, nginx-exporter
 	VERSION=$(VERSION) docker compose --profile full up -d --build --wait
 
 down:
@@ -69,7 +69,7 @@ ansible-check: ## lint + syntax + check mode (no alvo Linux)
 	ansible-playbook -i ansible/inventory.ini --syntax-check ansible/playbook.yml
 	ansible-playbook -i ansible/inventory.ini ansible/playbook.yml --check --diff
 
-ansible-run: ## o comando único do brief
+ansible-run: ## provisiona tudo com um único comando
 	ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
 
 bench: ## benchmarks do hot path
