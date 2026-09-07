@@ -1,0 +1,19 @@
+# observability/grafana/provisioning/dashboards/dashboards.yml — carrega os JSON versionados.
+#
+# options.path TEM de ser igual ao destino do mount no compose.yml
+# (./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro). Divergência = dashboard não
+# carrega e o Grafana só reclama no log: docker compose logs grafana | grep -i provisioning
+apiVersion: 1
+
+providers:
+  - name: korp
+    orgId: 1
+    folder: Projeto Korp
+    folderUid: korp                 # estável: usado por links e pela API /api/search?folderUIDs=korp
+    type: file
+    disableDeletion: true           # apagar dashboard = apagar o arquivo + PR, nunca pela UI
+    allowUiUpdates: false           # edição na UI não sobrescreve o arquivo versionado
+    updateIntervalSeconds: 30       # relê o diretório; mudança no JSON aparece sem restart
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

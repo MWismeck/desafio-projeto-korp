@@ -1,0 +1,21 @@
+# roles/validate/defaults/main.yml — variáveis sobrescrevíveis da validação final
+#. `compose_profiles` vem de ansible/group_vars/all.yml.
+---
+validate_host: localhost
+validate_port: 80
+validate_retries: 10
+validate_delay: 3
+validate_profile_full: "{{ 'full' in (compose_profiles | default) }}"
+
+# Consulta ao Prometheus pela sonda externa do blackbox (perfil `full`,). O ponto cego que o
+# ADR fecha: `up`, `service_up` e `/healthz` observam o processo POR DENTRO e podem estar todos verdes
+# com o `curl http://localhost/projeto-korp` do  quebrado. `probe_success` é a única série que
+# atravessa o NGINX e confere o corpo da resposta (módulo korp_contract:
+# fail_if_body_not_matches_regexp com "Projeto Korp").
+validate_prometheus_url: http://localhost:9090
+validate_probe_query: probe_success
+# Label `probe` do job blackbox-http em observability/prometheus/scrape_full.yml: o alvo
+# http://nginx/projeto-korp recebe probe=contrato; http://nginx/healthz recebe probe=liveness.
+validate_probe_label: contrato
+validate_probe_retries: 30
+validate_probe_delay: 5

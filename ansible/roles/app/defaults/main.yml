@@ -1,0 +1,9 @@
+# roles/app/defaults/main.yml — variáveis da role app.
+# `project_root` e `compose_profiles` são compartilhadas com nginx/monitoring/validate e moram em
+# ansible/group_vars/all.yml.
+---
+app_name: http-server-projeto-korp
+app_version: dev
+app_commit: >-
+  {{ lookup('pipe', 'git -C ' ~ (playbook_dir | dirname)
+     ~ ' rev-parse --short HEAD 2>/dev/null || echo none') }}

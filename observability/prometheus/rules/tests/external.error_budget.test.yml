@@ -1,0 +1,77 @@
+# observability/prometheus/rules/tests/external.error_budget.test.yml — teste da recording rule
+# `slo:external_availability:error_budget_remaining_ratio30d` e do SLI de 30 d que a alimenta
+# (grupos http-server-projeto-korp.external.recording / .external.slo).
+#
+# POR QUE UM ARQUIVO SEPARADO de external.test.yml: a janela é de 30 d e `promtool test rules` avalia
+# TODOS os grupos a cada `evaluation_interval` até o maior `eval_time`. Com o `evaluation_interval: 1m`
+# de external.test.yml seriam 43.200 avaliações; aqui o passo é `6h` (121 avaliações) e as séries são
+# de 6 em 6 h — a receita de  para janelas longas. Os alertas externos seguem
+# testados em external.test.yml.
+#
+# PROMETHEUS 3.x TEM RANGE SELECTOR ABERTO À ESQUERDA: `[30d]` cobre (t-30d, t] no 3.x e [t-30d, t] no
+# 2.x — uma amostra a mais na v2.55.1. Por isso as séries abaixo são CONSTANTES (só 1 ou só 0): a média
+# de uma constante não depende de quantas amostras entraram na janela, e o teste dá o MESMO resultado
+# nas duas versões. Uma série alternada (1,0,1,0…) daria 60/120 no 3.x e 61/121 no 2.x — armadilha real.
+# A LINEARIDADE da fórmula (valor intermediário 0,5) é asseverada em service.error_budget.test.yml,
+# que usa razões de contadores e por isso é imune à borda da janela.
+#
+# Rodar: promtool test rules external.error_budget.test.yml
+rule_files:
+  - ../external.rules.yml
+
+evaluation_interval: 6h
+
+# `group_eval_order` NÃO É OPCIONAL AQUI: sem ele o promtool ordena os grupos por um mapa Go e a ordem
+# entre grupos é ALEATÓRIA a cada execução (falha intermitente com `got: nil`). O grupo .external.slo
+# LÊ `service:sli_availability_external:ratio_avg30d`, gravada pelo .external.recording, e com passo de
+# 6 h o lookback de 5 min não alcança a avaliação anterior — a ordem tem de ser explícita.
+group_eval_order:
+  - http-server-projeto-korp.external.recording
+  - http-server-projeto-korp.external.slo
+  - http-server-projeto-korp.external.alerts
+
+tests:
+  # ============================================================================================
+  # Caso 1: 30 d de sonda verde através do NGINX → SLI externo = 1 → orçamento INTACTO = 1.
+  # ============================================================================================
+  - interval: 6h
+    input_series:
+      - series: 'probe_success{job="blackbox-http",instance="http://nginx/projeto-korp",service="http-server-projeto-korp",probe="contrato"}'
+        values: '1x130'          # 780 h (32,5 d) de sondas bem-sucedidas
+      - series: 'probe_success{job="blackbox-http",instance="http://nginx/healthz",service="http-server-projeto-korp",probe="liveness"}'
+        values: '1x130'
+    promql_expr_test:
+      - expr: service:sli_availability_external:ratio_avg30d
+        eval_time: 30d6h
+        exp_samples:
+          - labels: 'service:sli_availability_external:ratio_avg30d{service="http-server-projeto-korp"}'
+            value: 1
+      - expr: slo:external_availability:error_budget_remaining_ratio30d
+        eval_time: 30d6h
+        exp_samples:
+          - labels: 'slo:external_availability:error_budget_remaining_ratio30d{service="http-server-projeto-korp",slo="availability_external"}'
+            value: 1
+
+  # ============================================================================================
+  # Caso 2: 30 d de caminho do usuário quebrado → SLI externo = 0 → 1 - (1/0.001) = -999.
+  # O `clamp(..., 0, 1)` satura em 0: é esta asserção que prova o clamp inferior (sem ele o painel
+  # de orçamento externo mostraria -999 e a escala do gráfico morreria).
+  # A sonda de liveness continua verde de propósito: o SLI externo olha SÓ `probe="contrato"`.
+  # ============================================================================================
+  - interval: 6h
+    input_series:
+      - series: 'probe_success{job="blackbox-http",instance="http://nginx/projeto-korp",service="http-server-projeto-korp",probe="contrato"}'
+        values: '0x130'
+      - series: 'probe_success{job="blackbox-http",instance="http://nginx/healthz",service="http-server-projeto-korp",probe="liveness"}'
+        values: '1x130'
+    promql_expr_test:
+      - expr: service:sli_availability_external:ratio_avg30d
+        eval_time: 30d6h
+        exp_samples:
+          - labels: 'service:sli_availability_external:ratio_avg30d{service="http-server-projeto-korp"}'
+            value: 0
+      - expr: slo:external_availability:error_budget_remaining_ratio30d
+        eval_time: 30d6h
+        exp_samples:
+          - labels: 'slo:external_availability:error_budget_remaining_ratio30d{service="http-server-projeto-korp",slo="availability_external"}'
+            value: 0

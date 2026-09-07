@@ -1,0 +1,141 @@
+# observability/prometheus/rules/container.rules.yml — SAÚDE DE CONTAINER (cAdvisor).
+# Criado em 2026-09-06 pela decisão do Humano de adotar o "stack estendido" de observabilidade.
+#
+# Por que existe: `up`, `service_up` e o SLI de 5xx enxergam o processo VIVO. Eles não enxergam o
+# container sendo morto por OOM, reiniciando em laço, estrangulado pelo CFS ou encostando no limite de
+# memória — falhas que o brief não pede, mas que explicam a maioria dos 5xx/latência reais.
+#
+# Fonte: cAdvisor (job `cadvisor`, perfil `full`). As séries do cAdvisor chegam com `service="cadvisor"`
+# (label do scrape), o que estragaria `group_by: [alertname, service]` do Alertmanager: TODO alerta de
+# container ficaria no mesmo grupo. Por isso cada recording rule reescreve `service` a partir do label
+# `name` do container (label_replace) — no compose `container_name` == nome do serviço.
+# Nível `container:` = labels preservadas {name, service}.
+#
+# Padrões: /§5, /§3/§4, 
+# Testes: tests/container.test.yml — promtool test rules.
+groups:
+  - name: korp.container.recording
+    rules:
+      # --- kills por OOM na última janela de 15 min (0 = saudável) ---
+      - record: container:oom_events:increase15m
+        expr: |
+          label_replace(sum by (name) (increase(container_oom_events_total{name=~".+"}[15m])),
+            "service", "$1", "name", "(.+)")
+
+      # --- reinícios vistos pelo RUNTIME (pega crash antes de o app expor /metrics) ---
+      - record: container:starts:changes1h
+        expr: |
+          label_replace(sum by (name) (changes(container_start_time_seconds{name=~".+"}[1h])),
+            "service", "$1", "name", "(.+)")
+
+      # --- reinícios vistos pelo PROCESSO (funciona no perfil padrão, sem cAdvisor) ---
+      # nível `instance:` — a réplica importa aqui (é ela que reinicia)
+      - record: instance:process_start_time_seconds:changes1h
+        expr: sum by (job, service, instance) (changes(process_start_time_seconds{job="http-server-projeto-korp"}[1h]))
+
+      # --- fração do tempo executável gasto ESTRANGULADO pelo CFS (0–1) ---
+      # denominador = throttled + usado (protegido por clamp_min): "de todo o tempo que o container
+      # quis rodar, quanto o kernel tirou dele". Latência alta com CPU 'baixa' costuma ser isto.
+      - record: container:cpu_cfs_throttled:ratio_rate5m
+        expr: |
+          label_replace(sum by (name) (rate(container_cpu_cfs_throttled_seconds_total{name=~".+"}[5m]))
+            /
+            clamp_min(sum by (name) (rate(container_cpu_cfs_throttled_seconds_total{name=~".+"}[5m]))
+              +
+              sum by (name) (rate(container_cpu_usage_seconds_total{name=~".+"}[5m])),
+              1e-9),
+            "service", "$1", "name", "(.+)")
+
+      # --- headroom de memória: working set / limite do spec (0–1) ---
+      # `> 0` no denominador descarta container SEM limite (spec = 0), que geraria razão infinita.
+      - record: container:memory_working_set:ratio
+        expr: |
+          label_replace(sum by (name) (container_memory_working_set_bytes{name=~".+"})
+            /
+            clamp_min(sum by (name) (container_spec_memory_limit_bytes{name=~".+"} > 0), 1),
+            "service", "$1", "name", "(.+)")
+
+      # --- idade da última amostra do container (s): cresce quando o container some ---
+      - record: container:last_seen_age:seconds
+        expr: |
+          label_replace(time - max by (name) (container_last_seen{name=~".+"}),
+            "service", "$1", "name", "(.+)")
+
+  - name: korp.container.alerts
+    rules:
+      # ---------- OOM ----------
+      - alert: ContainerOOMKilled
+        expr: container:oom_events:increase15m > 0
+        for: 0m                     # o kill já aconteceu; esperar não muda o diagnóstico
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "{{ $labels.service }} foi morto por OOM (container {{ $labels.name }})"
+          description: "container_oom_events_total subiu nos últimos 15 min: o cgroup estourou o limite de memória. Efeito imediato: conexões cortadas, 5xx e reinício. Ver limite em `docker inspect` e o headroom em container:memory_working_set:ratio."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#containeroomkilled"
+          dashboard_url: "http://localhost:3000/d/korp-container-health"
+
+      # ---------- Reinício em laço (duas visões independentes) ----------
+      - alert: ContainerRestartLoop
+        expr: container:starts:changes1h > 2
+        for: 5m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "{{ $labels.service }} reinicia em laço (visão do runtime)"
+          description: "container_start_time_seconds mudou {{ printf \"%.0f\" $value }}x na última hora (limite 2). CrashLoop: `docker logs --tail=100 {{ $labels.name }}` e a política de restart do compose."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#containerrestartloop"
+          dashboard_url: "http://localhost:3000/d/korp-container-health"
+
+      - alert: ServiceRestartLoop
+        expr: instance:process_start_time_seconds:changes1h > 2
+        for: 5m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "{{ $labels.service }} reinicia em laço (visão do processo)"
+          description: "process_start_time_seconds mudou {{ printf \"%.0f\" $value }}x na última hora (limite 2) em {{ $labels.instance }}. Vale no perfil padrão, sem cAdvisor: o processo está subindo de novo a cada poucos minutos."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicerestartloop"
+          dashboard_url: "http://localhost:3000/d/korp-container-health"
+
+      # ---------- CPU throttling do CFS ----------
+      - alert: ContainerCPUThrottled
+        expr: container:cpu_cfs_throttled:ratio_rate5m > 0.25
+        for: 10m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "{{ $labels.service }} estrangulado pelo CFS (container {{ $labels.name }})"
+          description: "{{ printf \"%.2f\" $value }} do tempo executável foi throttled em 5 min (limite 0.25). É a causa clássica de latência alta com 'CPU baixa': subir `cpus:`/`cpu_quota` ou reduzir trabalho por requisição."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#containercputhrottled"
+          dashboard_url: "http://localhost:3000/d/korp-container-health"
+
+      # ---------- Headroom de memória ----------
+      - alert: ContainerMemoryNearLimit
+        expr: container:memory_working_set:ratio > 0.85
+        for: 10m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "{{ $labels.service }} perto do limite de memória (container {{ $labels.name }})"
+          description: "working_set/limite = {{ printf \"%.2f\" $value }} há 10 min (limite 0.85). É o alerta PREVENTIVO do OOM: revisar limite ou investigar vazamento com o perfil de heap."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#containermemorynearlimit"
+          dashboard_url: "http://localhost:3000/d/korp-container-health"
+
+      # ---------- Container sumido ----------
+      - alert: ContainerMissing
+        expr: container:last_seen_age:seconds > 120
+        for: 2m
+        labels:
+          severity: warning       # o page do caminho crítico é TargetDown/ServiceUnavailable
+          team: sre
+        annotations:
+          summary: "{{ $labels.service }} sumiu do cAdvisor (container {{ $labels.name }})"
+          description: "container_last_seen não é atualizado há mais de 120 s: container removido, parado ou o cgroup deixou de existir. Conferir com `docker ps -a --filter name={{ $labels.name }}`."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#containermissing"
+          dashboard_url: "http://localhost:3000/d/korp-container-health"

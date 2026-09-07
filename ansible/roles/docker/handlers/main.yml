@@ -1,0 +1,5 @@
+# roles/docker/handlers/main.yml
+---
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true

@@ -1,0 +1,12 @@
+#.hadolint.yaml — gate.
+failure-threshold: warning
+trustedRegistries:
+  - docker.io
+  - gcr.io
+  - ghcr.io
+ignored:
+  # DL3018 (pinar versão em apk add): a base é pinada por DIGEST,
+  # o que já torna o conjunto de pacotes determinístico. Pinar versão de pacote alpine à mão quebra o
+  # build a cada rebuild da base, sem ganho de reprodutibilidade.
+  - DL3018
+# DL3006 (tag ausente) e DL3007 (:latest) permanecem ativos: imagens sempre pinadas.

@@ -1,0 +1,180 @@
+# observability/prometheus/rules/tests/external.test.yml — testes unitários da disponibilidade externa
+# (blackbox_exporter atravessando o NGINX). Caso positivo e negativo por alerta.
+# Rodar: promtool test rules external.test.yml
+#
+# Nota: `env` e `team` das séries reais vêm de static_configs.labels do job blackbox-http
+#. Os testes abaixo modelam só o que a REGRA usa.
+rule_files:
+  - ../external.rules.yml
+
+evaluation_interval: 1m
+
+# group_eval_order acrescentado em 2026-09-06: sem ele o promtool ordena os grupos por mapa Go, e a
+# ordem entre grupos e ALEATORIA. Os grupos de alerta leem series gravadas pelo grupo de recording,
+# entao a ordem importa. Hoje estes testes passam so porque o evaluation_interval de 1m cabe no
+# lookback de 5 min; com passo maior o teste falha de forma intermitente (medido em ~30% das
+# execucoes num teste de 30 d). Declarar a ordem torna o resultado deterministico.
+group_eval_order:
+  - http-server-projeto-korp.external.recording
+  - http-server-projeto-korp.external.slo
+  - http-server-projeto-korp.external.alerts
+
+tests:
+  # ============================================================================================
+  # Caso 1 (POSITIVO): a borda quebrou e o APP está são — `location` errada, proxy_pass apontando
+  # para o lugar errado, upstream 502. /healthz continua respondendo; /projeto-korp não.
+  # É o cenário que TargetDown e ServiceUnavailable NÃO enxergam.
+  # ============================================================================================
+  - interval: 1m
+    input_series:
+      - series: 'probe_success{job="blackbox-http",instance="http://nginx/projeto-korp",service="http-server-projeto-korp",probe="contrato"}'
+        values: '0x10'
+      - series: 'probe_success{job="blackbox-http",instance="http://nginx/healthz",service="http-server-projeto-korp",probe="liveness"}'
+        values: '1x10'
+      - series: 'service_up{job="http-server-projeto-korp",service="http-server-projeto-korp",instance="http-server-projeto-korp:8080"}'
+        values: '1x10'
+    alert_rule_test:
+      - alertname: UserPathUnavailable
+        eval_time: 5m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: sre
+              job: blackbox-http
+              instance: http://nginx/projeto-korp
+              service: http-server-projeto-korp
+              probe: contrato
+            exp_annotations:
+              summary: "http-server-projeto-korp inalcançável pelo caminho do usuário (sonda contrato)"
+              description: "probe_success == 0 para http://nginx/projeto-korp há 1 min COM service_up == 1: o app está são e a borda não entrega. Olhar NGINX (`docker logs nginx`, 502/504), proxy_pass e a rede korp-net."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#userpathunavailable"
+              dashboard_url: "http://localhost:3000/d/korp-edge"
+      # sem violação de contrato neste cenário (a sonda nem chegou a comparar o corpo)
+      - alertname: ServiceContractViolated
+        eval_time: 5m
+        exp_alerts:
+
+  # ============================================================================================
+  # Caso 2 (NEGATIVO decisivo): o APP caiu (service_up == 0) e por isso a sonda falha.
+  # UserPathUnavailable NÃO pode disparar — quem fala aqui é ServiceUnavailable/TargetDown
+  # (service.rules.yml). É o `and on  service_up == 1` que garante a separação.
+  # ============================================================================================
+  - interval: 1m
+    input_series:
+      - series: 'probe_success{job="blackbox-http",instance="http://nginx/projeto-korp",service="http-server-projeto-korp",probe="contrato"}'
+        values: '0x10'
+      - series: 'service_up{job="http-server-projeto-korp",service="http-server-projeto-korp",instance="http-server-projeto-korp:8080"}'
+        values: '0x10'
+    alert_rule_test:
+      - alertname: UserPathUnavailable
+        eval_time: 5m
+        exp_alerts:
+
+  # ============================================================================================
+  # Caso 3 (POSITIVO): HTTP 200 com corpo FORA do contrato de  — o módulo korp_contract
+  # reprova pela regex. O SLI interno de 5xx não vê nada disso.
+  # ============================================================================================
+  - interval: 1m
+    input_series:
+      - series: 'probe_success{job="blackbox-http",instance="http://nginx/projeto-korp",service="http-server-projeto-korp",probe="contrato"}'
+        values: '0x10'
+      - series: 'probe_failed_due_to_regex{job="blackbox-http",instance="http://nginx/projeto-korp",service="http-server-projeto-korp",probe="contrato"}'
+        values: '1x10'
+      - series: 'service_up{job="http-server-projeto-korp",service="http-server-projeto-korp",instance="http-server-projeto-korp:8080"}'
+        values: '1x10'
+    alert_rule_test:
+      - alertname: ServiceContractViolated
+        eval_time: 5m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: sre
+              job: blackbox-http
+              instance: http://nginx/projeto-korp
+              service: http-server-projeto-korp
+              probe: contrato
+            exp_annotations:
+              summary: "http-server-projeto-korp responde 200 mas fora do contrato"
+              description: 'probe_failed_due_to_regex == 1 em http://nginx/projeto-korp: o corpo não contém o JSON esperado ({"nome":"Projeto Korp","horario":...}). HTTP 200 com resposta errada é invisível para o SLI de 5xx — este é o único alerta que pega.'
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicecontractviolated"
+              dashboard_url: "http://localhost:3000/d/korp-edge"
+
+  # ============================================================================================
+  # Caso 4 (POSITIVO): SLO externo — 100 % das sondas falhando por mais de 1 h.
+  # burn rate = (1 - 0) / 0.001 = 1000x em TODAS as janelas: dispara o crítico (1h/5m) e, passados
+  # 15 min, também o lento (3d/6h) — os dois compartilham o nome do alerta.
+  # ============================================================================================
+  - interval: 1m
+    input_series:
+      - series: 'probe_success{job="blackbox-http",instance="http://nginx/projeto-korp",service="http-server-projeto-korp",probe="contrato"}'
+        values: '0x80'
+    promql_expr_test:
+      - expr: service:sli_availability_external:ratio_avg1h
+        eval_time: 65m
+        exp_samples:
+          - labels: 'service:sli_availability_external:ratio_avg1h{service="http-server-projeto-korp"}'
+            value: 0
+      - expr: slo:external_availability:burn_rate1h
+        eval_time: 65m
+        exp_samples:
+          - labels: 'slo:external_availability:burn_rate1h{service="http-server-projeto-korp",slo="availability_external"}'
+            value: 1000
+    alert_rule_test:
+      - alertname: ServiceExternalAvailabilityBurn
+        eval_time: 65m           # >= janela longa (1h) + for (2m)
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: sre
+              service: http-server-projeto-korp
+              slo: availability_external
+            exp_annotations:
+              summary: "http-server-projeto-korp queima error budget de disponibilidade EXTERNA rápido demais"
+              description: "Burn rate 1000.00x visto de fora, pelo NGINX (limite 14.4x em 1h/5m ou 6x em 6h/30m). SLO 99.9 %/30 d. Diferente do burn interno: aqui entram NGINX, rede e contrato."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#serviceexternalavailabilityburn"
+              dashboard_url: "http://localhost:3000/d/slo-overview"
+          - exp_labels:
+              severity: warning
+              team: sre
+              service: http-server-projeto-korp
+              slo: availability_external
+            exp_annotations:
+              summary: "http-server-projeto-korp queima error budget de disponibilidade EXTERNA lentamente"
+              description: "Burn rate 1000.00x sustentado em 3d/6h (limite 1x) na sonda através do NGINX: no ritmo atual o orçamento de 30 d acaba antes do fim da janela."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#serviceexternalavailabilityburn"
+              dashboard_url: "http://localhost:3000/d/slo-overview"
+
+  # ============================================================================================
+  # Caso 5 (NEGATIVO): caminho do usuário íntegro por mais de 1 h — nenhum alerta externo.
+  # ============================================================================================
+  - interval: 1m
+    input_series:
+      - series: 'probe_success{job="blackbox-http",instance="http://nginx/projeto-korp",service="http-server-projeto-korp",probe="contrato"}'
+        values: '1x80'
+      - series: 'probe_success{job="blackbox-http",instance="http://nginx/healthz",service="http-server-projeto-korp",probe="liveness"}'
+        values: '1x80'
+      - series: 'probe_failed_due_to_regex{job="blackbox-http",instance="http://nginx/projeto-korp",service="http-server-projeto-korp",probe="contrato"}'
+        values: '0x80'
+      - series: 'service_up{job="http-server-projeto-korp",service="http-server-projeto-korp",instance="http-server-projeto-korp:8080"}'
+        values: '1x80'
+    promql_expr_test:
+      - expr: service:sli_availability_external:ratio_avg5m
+        eval_time: 65m
+        exp_samples:
+          - labels: 'service:sli_availability_external:ratio_avg5m{service="http-server-projeto-korp"}'
+            value: 1
+      - expr: slo:external_availability:burn_rate1h
+        eval_time: 65m
+        exp_samples:
+          - labels: 'slo:external_availability:burn_rate1h{service="http-server-projeto-korp",slo="availability_external"}'
+            value: 0
+    alert_rule_test:
+      - alertname: UserPathUnavailable
+        eval_time: 65m
+        exp_alerts:
+      - alertname: ServiceContractViolated
+        eval_time: 65m
+        exp_alerts:
+      - alertname: ServiceExternalAvailabilityBurn
+        eval_time: 65m
+        exp_alerts:

@@ -1,0 +1,380 @@
+# compose.yml — Desafio Korp.
+#
+# PERFIL PADRÃO (o que o brief exige, e nada além —  /  C2):
+#   http-server-projeto-korp (sem ports) · nginx (80:80) · prometheus (9090) · grafana (3000)
+#
+# PERFIL `full` (stack estendido de observabilidade, decisão do Humano em 2026-09-06 →):
+#   três pilares correlacionados + perfilamento contínuo + saúde de container.
+#   alertmanager · cadvisor · node-exporter ·
+#   blackbox-exporter · nginx-exporter — TODOS sem `ports:` (apenas `expose:`): o perfil `full` é
+#   laboratório e não pode ampliar a superfície publicada no host (R-08).
+#
+# LIMITES DE RECURSO (correção 2026-09-06, achado F5): TODO serviço declara `cpus` e `mem_limit`.
+# POR QUE isso não é cosmético: sem limite, o cgroup do container não tem teto e o cAdvisor exporta
+# `container_spec_memory_limit_bytes = 0` — a razão de saturação (uso/limite) vira +Inf, o painel USE
+# fica inútil e o CFS nunca faz throttling, então `container_cpu_cfs_throttled_seconds_total` fica
+# permanentemente em zero. Limite declarado é PRÉ-REQUISITO da métrica de saturação, não enfeite.
+#
+# Imagens: sempre tag explícita (`:latest` proibido,  C4) com o comentário
+# `# pinar:` acima —  substitui pelo digest antes do primeiro push (DEBT-01,).
+name: projeto-korp
+
+# Rotação de log em todo serviço: sem isto um container falando muito enche o disco do host e leva
+# junto Prometheus, Loki e o app (C7). O driver json-file é também o que o Alloy lê pela API do daemon.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  # ================================================================================================
+  # PERFIL PADRÃO — o mínimo do brief
+  # ================================================================================================
+
+  http-server-projeto-korp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${VERSION:-dev}
+        COMMIT: ${COMMIT:-none}
+    image: http-server-projeto-korp:${VERSION:-dev}
+    container_name: http-server-projeto-korp
+    # nenhuma porta publicada no host — só o NGINX fala com este serviço pela rede korp-net
+    expose:
+      - "8080"
+    environment:
+      APP_PORT: "8080"
+      APP_ENV: ${APP_ENV:-local}
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      # GOMEMLIMIT abaixo do mem_limit (256m): dá ao GC uma meta suave para coletar ANTES de o kernel
+      # matar o processo por OOM. Sem ele, um pico de heap vira OOMKill silencioso em vez de GC.
+      GOMEMLIMIT: ${GOMEMLIMIT:-200MiB}
+      # cpus: "0.5" → ceil(0.5) = 1. Go < 1.25 não lê a quota do cgroup e assumiria todos os cores do
+      # host: mais Ps que a quota permite = throttling do CFS e latência de cauda pior sem motivo.
+      GOMAXPROCS: ${GOMAXPROCS:-1}
+      # Tracing desligado no perfil padrão: sem Collector no ar, SDK ligado só
+    networks:
+      - korp-net
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    pids_limit: 256
+    cpus: "0.5"
+    mem_limit: 256m
+    stop_grace_period: 15s
+    # healthcheck: a base alpine tem wget (BusyBox); a flag -healthcheck do binário é o
+    # caminho portável e é a usada aqui (forma exec, independe de shell).
+    healthcheck:
+      test: ["CMD", "/http-server-projeto-korp", "-healthcheck"]
+      interval: 10s
+      timeout: 2s
+      start_period: 3s
+      retries: 3
+    logging: *default-logging
+
+  nginx:
+    image: nginx:1.27-alpine@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a10
+    container_name: nginx
+    ports:
+      - "80:80"                                   # única porta publicada pelo proxy
+    expose:
+      - "8081"                                    # stub_status, só dentro de korp-net (ver nginx/conf.d/stub_status.conf)
+    volumes:
+      -./nginx/conf.d:/etc/nginx/conf.d:ro       # / (http-server-projeto-korp.conf + stub_status.conf)
+    depends_on:
+      http-server-projeto-korp:
+        condition: service_healthy                # C3: subir o proxy antes do upstream só produz 502 na demo
+    networks:
+      - korp-net                                  # 
+    restart: unless-stopped
+    cpus: "0.5"
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/nginx-health"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
+    logging: *default-logging
+
+  prometheus:
+    # 3.x conforme; regras e testes validados em v2.55.1 e v3.5.0 (2026-09-06).
+    # Atencao ao 3.x: range selector aberto a esquerda muda rate/increase na borda da janela.
+    image: prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
+    container_name: prometheus
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # 45d e nao 15d: o error budget do SLO e de 30 dias. Reter menos que a janela do SLO torna o
+      # painel de orcamento mentiroso.
+      - --storage.tsdb.retention.time=45d
+      - --storage.tsdb.retention.size=2GB
+      - --web.enable-lifecycle
+      # connector spanmetrics — e o pulo "gráfico de latência → trace no Tempo" simplesmente não
+      # existe. Custo: alguns MB de RAM em um buffer circular. É o que liga métrica a trace.
+    volumes:
+      # DIRETORIO, nao arquivo: o perfil estendido da demo liga os jobs do perfil `full`
+      # colocando/retirando o `scrape_full.yml`, que o `prometheus.yml` carrega por
+      # `scrape_config_files: ["scrape_*.yml"]`. Com mount por arquivo esse arquivo seria invisivel
+      # dentro do container e o interruptor nao teria efeito. Montar o arquivo explicitamente tambem
+      # nao serve: se ele nao existir no host, o Docker cria um DIRETORIO no lugar e quebra o perfil padrão.
+      - ./observability/prometheus:/etc/prometheus:ro
+      - prometheus-data:/prometheus
+    ports:
+      - "9090:9090"
+    networks:
+      - korp-net
+    restart: unless-stopped
+    cpus: "1.0"
+    mem_limit: 1g
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9090/-/ready"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    logging: *default-logging
+
+  grafana:
+    image: grafana/grafana:11.3.0@sha256:a0f881232a6fb71a0554a47d0fe2203b6888fe77f4cefb7ea62bed7eb54e13c3
+    container_name: grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD:-changeme}   # local; produção: secret
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+      # traceToLogs/traceToProfiles e o painel de flamegraph dependem destas features nas 11.x.
+      GF_FEATURE_TOGGLES_ENABLE: ${GF_FEATURE_TOGGLES_ENABLE:-traceToProfiles,traceqlEditor}
+    volumes:
+      -./observability/grafana/provisioning:/etc/grafana/provisioning:ro   # bônus 
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    networks:
+      - korp-net
+    restart: unless-stopped
+    cpus: "0.5"
+    mem_limit: 512m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:3000/api/health"]
+      interval: 15s
+      timeout: 3s
+      retries: 5
+    logging: *default-logging
+
+  # ================================================================================================
+  # PERFIL `full` — stack estendido. Nenhum destes serviços publica porta no host.
+  # ================================================================================================
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    # pinar: prom/alertmanager:v0.27.0@sha256:<digest>
+    container_name: alertmanager
+    profiles: ["full"]
+    command:
+      - --config.file=/etc/alertmanager/alertmanager.yml
+      - --storage.path=/alertmanager
+    volumes:
+      - ./observability/alertmanager/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      # silences e nflog (log de notificações) são estado: sem volume, todo restart re-notifica tudo.
+      - alertmanager-data:/alertmanager
+    expose:
+      - "9093"
+    networks:
+      - korp-net
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cpus: "0.25"
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9093/-/ready"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+    logging: *default-logging
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    # pinar: gcr.io/cadvisor/cadvisor:v0.49.1@sha256:<digest>
+    container_name: cadvisor
+    profiles: ["full"]
+    # ------------------------------------------------------------------------------------------
+    # EXCEÇÃO DELIBERADA AO ENDURECIMENTO (R-07 /). Por que é aceitável AQUI:
+    #   1. O trabalho do cAdvisor é ler o cgroupfs, o /proc e o estado do daemon de TODOS os
+    #      containers do host. Isso é, por definição, incompatível com read_only + cap_drop: [ALL]
+    #      + rootfs isolado: sem privileged e sem os bind mounts do host ele sobe e não mede nada.
+    #   2. Ele vive só no profile `full` — laboratório e demonstração. O perfil da ENTREGA
+    #      (app + nginx + prometheus + grafana) não o inclui, então a superfície avaliada não muda.
+    #   3. Todos os mounts do host são :ro; o container não expõe porta no host; não recebe tráfego
+    #      externo, só é raspado de dentro de korp-net.
+    #   4. A alternativa (métricas de container vindas do próprio daemon) não existe de forma
+    #      padronizada; sem cAdvisor não há USE de container — que é justamente o que F5 habilita.
+    # Se um dia isto sair do laboratório: trocar por cAdvisor sem privileged com CAP_SYS_ADMIN
+    # granular, ou pelas métricas do runtime, e registrar em ADR próprio.
+    # ------------------------------------------------------------------------------------------
+    privileged: true
+    devices:
+      - /dev/kmsg
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker/:/var/lib/docker:ro
+      - /dev/disk/:/dev/disk:ro
+    command:
+      # cardinalidade sob controle: cAdvisor é notório por gerar dezenas de milhares de séries.
+      - --docker_only=true               # ignora cgroups que não são de container (systemd, user slices)
+      - --store_container_labels=false   # labels do compose viram label de MÉTRICA se true — explosão garantida
+      - --housekeeping_interval=10s      # alinhado ao scrape; mais frequente é CPU jogada fora
+      - --disable_metrics=percpu,sched,tcp,udp,advtcp,process,hugetlb,referenced_memory,resctrl
+    expose:
+      - "8080"    # não conflita com o app: cada container tem o próprio IP em korp-net
+    networks:
+      - korp-net
+    restart: unless-stopped
+    cpus: "0.5"
+    mem_limit: 256m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8080/healthz"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    logging: *default-logging
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    # pinar: prom/node-exporter:v1.8.2@sha256:<digest>
+    container_name: node-exporter
+    profiles: ["full"]
+    # pid: host é necessário para o coletor ver os processos/namespaces do host, não os do container.
+    pid: host
+    volumes:
+      - /proc:/host/proc:ro
+      - /sys:/host/sys:ro
+      - /:/rootfs:ro
+    command:
+      - --path.procfs=/host/proc
+      - --path.sysfs=/host/sys
+      - --path.rootfs=/rootfs
+      # --collector.disable-defaults + lista explícita: o conjunto default traz ~40 coletores
+      # (thermal, nvme, infiniband, mdadm, zfs...) que em WSL2/VM só produzem erro de scrape e séries
+      # vazias. Aqui fica exatamente o que alimenta USE de host.
+      - --collector.disable-defaults
+      - --collector.cpu
+      - --collector.meminfo
+      - --collector.loadavg
+      - --collector.filesystem
+      - --collector.netdev
+      - --collector.diskstats
+      - --collector.uname
+      - --collector.os
+      # WSL2: /mnt/c e afins são 9p/drvfs (disco do Windows). Cada um vira série de filesystem, o
+      # statfs pode BLOQUEAR e travar o scrape inteiro por timeout. overlay/tmpfs são camadas de
+      # container, não capacidade real de disco.
+      - --collector.filesystem.fs-types-exclude=^(9p|drvfs|overlay|tmpfs|autofs|binfmt_misc|bpf|cgroup2?|configfs|debugfs|devpts|devtmpfs|fusectl|fuse\.lxcfs|hugetlbfs|iso9660|mqueue|nsfs|proc|procfs|pstore|rpc_pipefs|securityfs|selinuxfs|squashfs|sysfs|tracefs)$$
+      - --collector.filesystem.mount-points-exclude=^/(dev|proc|sys|run/credentials/.+|var/lib/docker/.+|rootfs/(dev|proc|sys|var/lib/docker)/.+|mnt/(c|d|wsl.+))($$|/)
+    expose:
+      - "9100"
+    networks:
+      - korp-net
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cpus: "0.25"
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9100/metrics"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:v0.25.0
+    # pinar: prom/blackbox-exporter:v0.25.0@sha256:<digest>
+    container_name: blackbox-exporter
+    profiles: ["full"]
+    command:
+      - --config.file=/etc/blackbox/blackbox.yml
+    volumes:
+      - ./observability/blackbox/blackbox.yml:/etc/blackbox/blackbox.yml:ro
+    expose:
+      - "9115"
+    depends_on:
+      nginx:
+        condition: service_healthy    # o probe korp_contract vai pelo proxy: sem NGINX de pé, é falso negativo
+    networks:
+      - korp-net
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    # NET_RAW é a ÚNICA capability devolvida: o prober `icmp` do blackbox.yml abre socket raw e sem
+    # ela falha com "permission denied" — enquanto o prober http continua funcionando, o que produz
+    # uma falha parcial difícil de diagnosticar. O prober http não precisa dela.
+    cap_add:
+      - NET_RAW
+    cpus: "0.25"
+    mem_limit: 128m
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9115/-/healthy"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+
+  nginx-exporter:
+    image: nginx/nginx-prometheus-exporter:1.4.0
+    # pinar: nginx/nginx-prometheus-exporter:1.4.0@sha256:<digest>
+    container_name: nginx-exporter
+    profiles: ["full"]
+    command:
+      # 8081 é o server interno de nginx/conf.d/stub_status.conf — porta NÃO publicada no host.
+      - --nginx.scrape-uri=http://nginx:8081/stub_status
+    expose:
+      - "9113"
+    depends_on:
+      nginx:
+        condition: service_healthy
+    networks:
+      - korp-net
+    restart: unless-stopped
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cpus: "0.25"
+    mem_limit: 64m
+    # healthcheck omitido: imagem mínima, sem shell nem wget; a saúde aparece no `up` do scrape.
+    logging: *default-logging
+
+networks:
+  korp-net:
+    name: korp-net          # rede bridge nomeada (o Ansible cria a mesma rede de forma idempotente)
+    driver: bridge
+
+volumes:
+  prometheus-data:
+  grafana-data:
+  alertmanager-data:

@@ -1,0 +1,17 @@
+# roles/monitoring/handlers/main.yml
+# Recarga a QUENTE da configuração do Prometheus. Roda só quando o interruptor do `scrape_full.yml`
+# mudou de estado (notify em tasks/main.yml) — por isso a 2ª execução do playbook não a dispara e o
+# PLAY RECAP fica com changed=0.
+# Exige `--web.enable-lifecycle` no processo do Prometheus (declarado no compose.yml). Reiniciar o
+# container seria mais simples e MUITO pior: perderia o WAL em memória e zeraria a janela de dados que
+# a demo acabou de gerar.
+---
+- name: Recarregar a configuração do Prometheus
+  ansible.builtin.uri:
+    url: "{{ monitoring_prometheus_url }}/-/reload"
+    method: POST
+    status_code: 200
+  register: monitoring_reload
+  retries: 10
+  delay: 3
+  until: monitoring_reload.status == 200

@@ -1,0 +1,103 @@
+# observability/prometheus/rules/tests/service.error_budget.test.yml — teste da recording rule
+# `slo:availability:error_budget_remaining_ratio30d` (grupo http-server-projeto-korp.slo).
+#
+# POR QUE UM ARQUIVO SEPARADO de service.test.yml: a janela é de 30 d. `promtool test rules` avalia
+# TODOS os grupos a cada `evaluation_interval` até o maior `eval_time`; com o `evaluation_interval: 1m`
+# de service.test.yml isso seriam 43.200 avaliações. Aqui o passo é `6h` (121 avaliações) e as séries
+# são de 6 em 6 h — a receita de  para janelas longas. Os alertas continuam
+# testados em service.test.yml; este arquivo só assevera o valor da regra.
+#
+# Prometheus 3.x tem range selector ABERTO À ESQUERDA — `[30d]` cobre (t-30d, t] em vez de [t-30d, t].
+# Todas as asserções abaixo são RAZÕES entre duas séries de mesma forma (mesmo `rate`, mesma janela,
+# mesma extrapolação), portanto o valor é idêntico em v2.55.1 e v3.5.0. É de propósito.
+#
+# Rodar: promtool test rules service.error_budget.test.yml
+rule_files:
+  - ../service.rules.yml
+
+evaluation_interval: 6h
+
+# `group_eval_order` NÃO É OPCIONAL AQUI. Sem ele o promtool ordena os grupos por um mapa Go — a ordem
+# entre grupos vira ALEATÓRIA a cada execução (medido: ~30 % de falhas intermitentes com `got: nil`).
+# Como `slo:availability:error_budget_remaining_ratio30d` (grupo .slo) LÊ a série gravada por
+# `service:sli_availability:ratio_rate30d` (grupo .recording), o .recording precisa rodar ANTES no
+# mesmo instante; com passo de 6 h o lookback de 5 min não alcança a avaliação anterior.
+group_eval_order:
+  - http-server-projeto-korp.recording
+  - http-server-projeto-korp.slo
+  - http-server-projeto-korp.alerts
+
+tests:
+  # ============================================================================================
+  # Caso 1: 30 d sem nenhum 5xx → SLI 30 d = 1 → orçamento INTACTO = 1.
+  # A série `code="500"` existe com valor CONSTANTE 0: sem ela o numerador seria um vetor VAZIO,
+  # `1 - (vazio / total)` também seria vazio e a regra não produziria amostra nenhuma.
+  # ============================================================================================
+  - interval: 6h
+    input_series:
+      - series: 'http_requests_total{service="http-server-projeto-korp",job="http-server-projeto-korp",instance="http-server-projeto-korp:8080",method="GET",route="/projeto-korp",code="200"}'
+        values: '0+21600x130'    # 1 req/s por 780 h (32,5 d), amostrado de 6 em 6 h
+      - series: 'http_requests_total{service="http-server-projeto-korp",job="http-server-projeto-korp",instance="http-server-projeto-korp:8080",method="GET",route="/projeto-korp",code="500"}'
+        values: '0x130'
+    promql_expr_test:
+      - expr: service:sli_availability:ratio_rate30d
+        eval_time: 30d6h
+        exp_samples:
+          - labels: 'service:sli_availability:ratio_rate30d{service="http-server-projeto-korp"}'
+            value: 1
+      - expr: slo:availability:error_budget_remaining_ratio30d
+        eval_time: 30d6h
+        exp_samples:
+          - labels: 'slo:availability:error_budget_remaining_ratio30d{service="http-server-projeto-korp",slo="availability"}'
+            value: 1
+
+  # ============================================================================================
+  # Caso 2 (o que prova a FÓRMULA, não só as pontas): 1 erro a cada 2.000 requisições.
+  # razão de erro = 0,0005 = METADE do orçamento de 0,001 → SLI 30 d = 0,9995 → restante = 0,5.
+  # ============================================================================================
+  - interval: 6h
+    input_series:
+      - series: 'http_requests_total{service="http-server-projeto-korp",job="http-server-projeto-korp",instance="http-server-projeto-korp:8080",method="GET",route="/projeto-korp",code="200"}'
+        values: '0+11994x130'
+      - series: 'http_requests_total{service="http-server-projeto-korp",job="http-server-projeto-korp",instance="http-server-projeto-korp:8080",method="GET",route="/projeto-korp",code="500"}'
+        values: '0+6x130'
+    promql_expr_test:
+      - expr: service:sli_availability:ratio_rate30d
+        eval_time: 30d6h
+        exp_samples:
+          - labels: 'service:sli_availability:ratio_rate30d{service="http-server-projeto-korp"}'
+            value: 0.9995
+      # `1 - (1 - 0,9995)/0,001` NÃO é exato em ponto flutuante (dá 0.5000000000000551) e o promtool
+      # compara `value:` por igualdade EXATA. Asseverar o literal ruidoso amarraria o teste a uma
+      # versão do Go/PromQL; a asserção abaixo é determinística: vale 1 se, e somente se, o orçamento
+      # estiver em 0,5 ± 1e-4. `> bool` / `< bool` devolvem 0/1 e descartam o __name__.
+      - expr: |
+          (slo:availability:error_budget_remaining_ratio30d > bool 0.4999)
+          *
+          (slo:availability:error_budget_remaining_ratio30d < bool 0.5001)
+        eval_time: 30d6h
+        exp_samples:
+          - labels: '{service="http-server-projeto-korp",slo="availability"}'
+            value: 1
+
+  # ============================================================================================
+  # Caso 3: 100 % de 5xx por 30 d → SLI = 0 → 1 - (1/0.001) = -999. O `clamp(..., 0, 1)` SATURA em 0.
+  # É esta asserção que prova o clamp inferior: sem ele o painel de orçamento mostraria -999.
+  # ============================================================================================
+  - interval: 6h
+    input_series:
+      - series: 'http_requests_total{service="http-server-projeto-korp",job="http-server-projeto-korp",instance="http-server-projeto-korp:8080",method="GET",route="/projeto-korp",code="500"}'
+        values: '0+21600x130'
+      - series: 'http_requests_total{service="http-server-projeto-korp",job="http-server-projeto-korp",instance="http-server-projeto-korp:8080",method="GET",route="/projeto-korp",code="200"}'
+        values: '0x130'
+    promql_expr_test:
+      - expr: service:sli_availability:ratio_rate30d
+        eval_time: 30d6h
+        exp_samples:
+          - labels: 'service:sli_availability:ratio_rate30d{service="http-server-projeto-korp"}'
+            value: 0
+      - expr: slo:availability:error_budget_remaining_ratio30d
+        eval_time: 30d6h
+        exp_samples:
+          - labels: 'slo:availability:error_budget_remaining_ratio30d{service="http-server-projeto-korp",slo="availability"}'
+            value: 0

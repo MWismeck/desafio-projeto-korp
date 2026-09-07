@@ -1,0 +1,164 @@
+# observability/prometheus/rules/tests/service.test.yml — testes unitários das regras. Rodar: promtool test rules service.test.yml
+rule_files:
+  - ../service.rules.yml
+
+evaluation_interval: 1m
+
+# group_eval_order acrescentado em 2026-09-06: sem ele o promtool ordena os grupos por mapa Go, e a
+# ordem entre grupos e ALEATORIA. Os grupos de alerta leem series gravadas pelo grupo de recording,
+# entao a ordem importa. Hoje estes testes passam so porque o evaluation_interval de 1m cabe no
+# lookback de 5 min; com passo maior o teste falha de forma intermitente (medido em ~30% das
+# execucoes num teste de 30 d). Declarar a ordem torna o resultado deterministico.
+group_eval_order:
+  - http-server-projeto-korp.recording
+  - http-server-projeto-korp.slo
+  - http-server-projeto-korp.alerts
+
+tests:
+  # ------------------------------------------------------------------ 1. 100% de erros 5xx → burn crítico
+  - interval: 1m
+    input_series:
+      - series: 'http_requests_total{service="http-server-projeto-korp",job="http-server-projeto-korp",instance="http-server-projeto-korp:8080",method="GET",route="/projeto-korp",code="500"}'
+        values: '0+60x30'
+      - series: 'http_requests_total{service="http-server-projeto-korp",job="http-server-projeto-korp",instance="http-server-projeto-korp:8080",method="GET",route="/projeto-korp",code="200"}'
+        values: '0x30'
+    promql_expr_test:
+      - expr: service:sli_availability:ratio_rate5m{service="http-server-projeto-korp"}
+        eval_time: 10m
+        exp_samples:
+          - labels: 'service:sli_availability:ratio_rate5m{service="http-server-projeto-korp"}'
+            value: 0
+    alert_rule_test:
+      - alertname: ServiceHighErrorRateBurn
+        eval_time: 10m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: http-server-projeto-korp
+              team: sre
+            exp_annotations:
+              summary: "Error budget de disponibilidade queimando rápido (http-server-projeto-korp)"
+              description: "Taxa de 5xx acima de 14.4x (1h/5m) ou 6x (6h/30m) do permitido pelo SLO 99.9%/30d."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicehigherrorrateburn"
+      # janela lenta (3d/6h) ainda pendente aos 10m (for: 15m) → aos 30m dispara também a warning
+      - alertname: ServiceHighErrorRateBurn
+        eval_time: 30m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: http-server-projeto-korp
+              team: sre
+            exp_annotations:
+              summary: "Error budget de disponibilidade queimando rápido (http-server-projeto-korp)"
+              description: "Taxa de 5xx acima de 14.4x (1h/5m) ou 6x (6h/30m) do permitido pelo SLO 99.9%/30d."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicehigherrorrateburn"
+          - exp_labels:
+              severity: warning
+              service: http-server-projeto-korp
+              team: sre
+            exp_annotations:
+              summary: "Error budget de disponibilidade em consumo lento (http-server-projeto-korp)"
+              description: "Taxa de 5xx acima de 1x (3d/6h) do permitido pelo SLO 99.9%/30d: abrir ticket."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicehigherrorrateburn"
+
+  # ------------------------------------------------------------------ 2. só 200 → nenhum alerta de erro
+  - interval: 1m
+    input_series:
+      - series: 'http_requests_total{service="http-server-projeto-korp",job="http-server-projeto-korp",instance="http-server-projeto-korp:8080",method="GET",route="/projeto-korp",code="200"}'
+        values: '0+60x60'
+    alert_rule_test:
+      - alertname: ServiceHighErrorRateBurn
+        eval_time: 30m
+        exp_alerts:
+
+  # ------------------------------------------------------------------ 3. latência: nenhuma requisição < 300ms → burn crítico
+  - interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_bucket{service="http-server-projeto-korp",job="http-server-projeto-korp",instance="http-server-projeto-korp:8080",le="0.3"}'
+        values: '0x30'
+      - series: 'http_request_duration_seconds_bucket{service="http-server-projeto-korp",job="http-server-projeto-korp",instance="http-server-projeto-korp:8080",le="+Inf"}'
+        values: '0+60x30'
+      - series: 'http_request_duration_seconds_count{service="http-server-projeto-korp",job="http-server-projeto-korp",instance="http-server-projeto-korp:8080"}'
+        values: '0+60x30'
+    alert_rule_test:
+      - alertname: ServiceHighLatencyBurn
+        eval_time: 10m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: http-server-projeto-korp
+              team: sre
+            exp_annotations:
+              summary: "Error budget de latência queimando rápido (http-server-projeto-korp)"
+              description: "Fração de requisições acima de 300ms consome o budget a 14.4x (1h/5m) ou 6x (6h/30m)."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicehighlatencyburn"
+
+  # ------------------------------------------------------------------ 4. latência boa → nenhum alerta
+  - interval: 1m
+    input_series:
+      - series: 'http_request_duration_seconds_bucket{service="http-server-projeto-korp",job="http-server-projeto-korp",instance="http-server-projeto-korp:8080",le="0.3"}'
+        values: '0+60x60'
+      - series: 'http_request_duration_seconds_bucket{service="http-server-projeto-korp",job="http-server-projeto-korp",instance="http-server-projeto-korp:8080",le="+Inf"}'
+        values: '0+60x60'
+      - series: 'http_request_duration_seconds_count{service="http-server-projeto-korp",job="http-server-projeto-korp",instance="http-server-projeto-korp:8080"}'
+        values: '0+60x60'
+    alert_rule_test:
+      - alertname: ServiceHighLatencyBurn
+        eval_time: 30m
+        exp_alerts:
+
+  # ------------------------------------------------------------------ 5. target down / up
+  - interval: 1m
+    input_series:
+      - series: 'up{job="http-server-projeto-korp",instance="http-server-projeto-korp:8080",service="http-server-projeto-korp"}'
+        values: '0x10'
+    alert_rule_test:
+      - alertname: TargetDown
+        eval_time: 3m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: http-server-projeto-korp
+              team: sre
+              job: http-server-projeto-korp
+              instance: http-server-projeto-korp:8080
+            exp_annotations:
+              summary: "Prometheus não consegue coletar o http-server-projeto-korp"
+              description: "O target http-server-projeto-korp:8080 está down há mais de 1 minuto: sem métricas, sem visibilidade."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#targetdown"
+  - interval: 1m
+    input_series:
+      - series: 'up{job="http-server-projeto-korp",instance="http-server-projeto-korp:8080",service="http-server-projeto-korp"}'
+        values: '1x10'
+    alert_rule_test:
+      - alertname: TargetDown
+        eval_time: 5m
+        exp_alerts:
+
+  # ------------------------------------------------------------------ 6. service_up 0 / 1
+  - interval: 1m
+    input_series:
+      - series: 'service_up{service="http-server-projeto-korp",job="http-server-projeto-korp",instance="http-server-projeto-korp:8080"}'
+        values: '0x10'
+    alert_rule_test:
+      - alertname: ServiceUnavailable
+        eval_time: 5m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              service: http-server-projeto-korp
+              team: sre
+              job: http-server-projeto-korp
+              instance: http-server-projeto-korp:8080
+            exp_annotations:
+              summary: "http-server-projeto-korp se declara indisponível (service_up == 0)"
+              description: "O readiness do serviço falha há mais de 2 minutos; requisições via NGINX tendem a 502."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#serviceunavailable"
+  - interval: 1m
+    input_series:
+      - series: 'service_up{service="http-server-projeto-korp",job="http-server-projeto-korp",instance="http-server-projeto-korp:8080"}'
+        values: '1x10'
+    alert_rule_test:
+      - alertname: ServiceUnavailable
+        eval_time: 5m
+        exp_alerts:

@@ -1,0 +1,119 @@
+# roles/validate/tasks/main.yml — validação final: requisição HTTP via NGINX e exibição
+# da resposta no console. Falha do playbook se a resposta não for a esperada (nunca ignore_errors).
+#
+# No perfil `full` a role acrescenta a prova que o  sozinho não dá: o `uri` abaixo é um
+# teste de aceite executado UMA vez, no fim do provisionamento; `probe_success` é a mesma verificação
+# repetida a cada 15 s pelo blackbox-exporter, de fora, atravessando o NGINX. Se ela não estiver
+# verde, o caminho do usuário não está observado — e é exatamente esse o ponto cego que o 
+# existe para fechar. Por isso a falha aqui é falha do playbook, não aviso.
+---
+- name: Aguardar a porta 80 aceitar conexão (NGINX publicado no host)
+  ansible.builtin.wait_for:
+    host: "{{ validate_host }}"
+    port: "{{ validate_port }}"
+    state: started
+    timeout: 60
+
+- name: Requisitar http://localhost/projeto-korp via NGINX (porta 80)
+  ansible.builtin.uri:
+    url: http://localhost:80/projeto-korp
+    method: GET
+    return_content: true
+    status_code: 200
+    headers:
+      Accept: application/json
+  register: validate_response
+  retries: 10
+  delay: 3
+  until: validate_response.status == 200
+
+- name: Validar a estrutura do JSON (nome e horário em UTC)
+  ansible.builtin.assert:
+    that:
+      - validate_response.json.nome == "Projeto Korp"
+      - validate_response.json.horario is defined
+      - validate_response.json.horario | length > 0
+    fail_msg: "Resposta inesperada: {{ validate_response.content }}"
+    success_msg: "JSON válido: nome='{{ validate_response.json.nome }}' horario='{{ validate_response.json.horario }}'"
+
+- name: Exibir a resposta do serviço no console
+  ansible.builtin.debug:
+    msg:
+      - "GET http://localhost:80/projeto-korp -> HTTP {{ validate_response.status }}"
+      - "{{ validate_response.json }}"
+
+- name: Confirmar que o app NÃO publica a porta 8080 no host
+  ansible.builtin.command: docker port http-server-projeto-korp
+  register: validate_app_ports
+  changed_when: false
+  failed_when: validate_app_ports.stdout | length > 0
+
+- name: Confirmar que app e nginx estão na rede korp-net
+  community.docker.docker_network_info:
+    name: korp-net
+  register: validate_net_info
+
+- name: Validar membros da rede
+  ansible.builtin.assert:
+    that: validate_net_members | intersect(['http-server-projeto-korp', 'nginx']) | length == 2
+    fail_msg: "app e/ou nginx fora da rede korp-net (membros: {{ validate_net_members | join(', ') }})"
+  vars:
+    validate_net_members: >-
+      {{ validate_net_info.network.Containers.values | map(attribute='Name') | list }}
+
+# =====================================================================================
+# Perfil `full` — a sonda externa enxerga o serviço ATRAVÉS do NGINX?
+# =====================================================================================
+
+- name: Consultar o Prometheus pela sonda externa do blackbox (perfil full)
+  ansible.builtin.uri:
+    url: "{{ validate_prometheus_url }}/api/v1/query?query={{ validate_probe_query | urlencode }}"
+    return_content: true
+  register: validate_probe
+  retries: "{{ validate_probe_retries }}"
+  delay: "{{ validate_probe_delay }}"
+  until: (validate_probe.json.data.result | default | length) > 0
+  when: validate_profile_full | bool
+
+- name: Exigir probe_success=1 na sonda que atravessa o NGINX
+  # value[1] é a amostra ("1" ou "0") no formato /api/v1/query; comparação como STRING é proposital
+  # (a API devolve o valor serializado).
+  ansible.builtin.assert:
+    that: validate_probe_contrato | selectattr('value.1', 'equalto', '1') | list | length > 0
+    fail_msg: >-
+      a sonda externa NÃO está enxergando o serviço através do NGINX
+      (probe_success{probe={{ validate_probe_label }}} != 1). O caminho do usuário do /
+      está quebrado ou o blackbox-exporter não alcança http://nginx/projeto-korp — investigue
+      `docker compose logs nginx blackbox-exporter` e o /targets do job blackbox-http.
+      Séries recebidas: {{ validate_probe.json.data.result | default }}
+    success_msg: >-
+      probe_success=1 em {{ validate_probe_contrato | map(attribute='metric.instance') | join(', ') }}
+      — o contrato do  está sendo cumprido através do proxy reverso, de fora
+  vars:
+    validate_probe_contrato: >-
+      {{ validate_probe.json.data.result | default
+         | selectattr('metric.probe', 'defined')
+         | selectattr('metric.probe', 'equalto', validate_probe_label) | list }}
+  when: validate_profile_full | bool
+
+- name: Exibir as sondas externas e seu resultado (perfil full)
+  ansible.builtin.debug:
+    msg: >-
+      {{ validate_probe.json.data.result | default
+         | map(attribute='metric.instance') | zip(validate_probe.json.data.result
+         | default | map(attribute='value.1')) | list }}
+  when: validate_profile_full | bool
+
+- name: Resumo final
+  ansible.builtin.debug:
+    msg: >-
+      {{ validate_summary_base
+         + ((validate_profile_full | bool) | ternary(validate_summary_full,)) }}
+  vars:
+    validate_summary_base:
+      - "Serviço: http://localhost/projeto-korp (via NGINX)"
+      - "Prometheus: http://localhost:9090/targets"
+      - "Grafana: http://localhost:3000 (dashboard http-server-projeto-korp)"
+    validate_summary_full:
+      - "Perfil full ativo: traces, logs, perfis e sonda externa no ar"
+      - "Tempo/Loki/Pyroscope: sem porta publicada — consulte pelos datasources do Grafana"

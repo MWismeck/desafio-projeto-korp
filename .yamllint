@@ -1,0 +1,12 @@
+#.yamllint — regras do projeto (as mesmas do gate local): 160 colunas, truthy só com true/false/yes/no.
+extends: default
+rules:
+  # series dos testes do Prometheus sao uma unica palavra longa (labels sem espaco): nao quebravel
+  line-length: {max: 160, allow-non-breakable-words: true, allow-non-breakable-inline-mappings: true}
+  truthy: {allowed-values: ["true", "false", "yes", "no"]}
+  document-start: disable
+  comments: {min-spaces-from-content: 1}
+# Regras e testes do Prometheus sao validados pelo promtool (lint estrito + testes unitarios); as
+# expressoes PromQL e as descriptions passam de 160 colunas por natureza e nao ganham nada quebradas.
+ignore: |
+  observability/prometheus/rules/

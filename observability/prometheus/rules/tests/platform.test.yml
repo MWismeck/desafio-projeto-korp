@@ -1,0 +1,69 @@
+# observability/prometheus/rules/tests/platform.test.yml — testes unitários de borda, saturação,
+# auto-monitoramento e host. Caso positivo e negativo por alerta.
+# Rodar: promtool test rules platform.test.yml
+rule_files:
+  - ../platform.rules.yml
+
+evaluation_interval: 1m
+
+# group_eval_order acrescentado em 2026-09-06: sem ele o promtool ordena os grupos por mapa Go, e a
+# ordem entre grupos e ALEATORIA. Os grupos de alerta leem series gravadas pelo grupo de recording,
+# entao a ordem importa. Hoje estes testes passam so porque o evaluation_interval de 1m cabe no
+# lookback de 5 min; com passo maior o teste falha de forma intermitente (medido em ~30% das
+# execucoes num teste de 30 d). Declarar a ordem torna o resultado deterministico.
+group_eval_order:
+  - korp.platform.recording
+  - korp.platform.alerts
+
+tests:
+  # ============================================================================================
+  # Caso 1 (POSITIVO): a plataforma inteira em pane silenciosa —
+  # NGINX descartando conexão, fd acabando no app, config do Prometheus não recarregada, grupo de
+  # regras falhando, notificação não saindo, span sendo perdido e cardinalidade acima do orçamento.
+  # Nenhum destes aparece no SLI de 5xx: é exatamente o ponto cego que o stack estendido fecha.
+  # ============================================================================================
+  # ============================================================================================
+  # Caso 2 (NEGATIVO): plataforma saudável — nada dispara.
+  # ============================================================================================
+  # ============================================================================================
+  # Caso 3 (POSITIVO): disco do host caindo 50 MB a cada 5 min — predict_linear projeta zero
+  # dentro de 4 h e já há menos de 30 % livre. `interval: 5m` porque a janela da regra é de 6 h.
+  # ============================================================================================
+  - interval: 5m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{job="node",service="node-exporter",instance="node-exporter:9100",device="/dev/sda1",fstype="ext4",mountpoint="/"}'
+        values: '2000000000-50000000x30'
+      - series: 'node_filesystem_size_bytes{job="node",service="node-exporter",instance="node-exporter:9100",device="/dev/sda1",fstype="ext4",mountpoint="/"}'
+        values: '10000000000x30'
+    alert_rule_test:
+      - alertname: HostDiskWillFill
+        eval_time: 2h                # condição verdadeira desde ~10 min; for: 30m folgado
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              team: sre
+              job: node
+              service: node-exporter
+              instance: node-exporter:9100
+              device: /dev/sda1
+              fstype: ext4
+              mountpoint: /
+            exp_annotations:
+              summary: "node-exporter: disco de / acaba em menos de 4 h"
+              description: "Pela tendência das últimas 6 h, node_filesystem_avail_bytes chega a zero em menos de 4 h em node-exporter:9100 (/dev/sda1), com menos de 30 % livre agora. Disco cheio para o TSDB, o log do Docker e o próprio serviço. Ação: podar imagem/volume, rotacionar log, revisar retention.size."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#hostdiskwillfill"
+              dashboard_url: "http://localhost:3000/d/korp-container-health"
+
+  # ============================================================================================
+  # Caso 4 (NEGATIVO): disco estável e com folga — a tendência é plana, nada é previsto.
+  # ============================================================================================
+  - interval: 5m
+    input_series:
+      - series: 'node_filesystem_avail_bytes{job="node",service="node-exporter",instance="node-exporter:9100",device="/dev/sda1",fstype="ext4",mountpoint="/"}'
+        values: '8000000000x30'
+      - series: 'node_filesystem_size_bytes{job="node",service="node-exporter",instance="node-exporter:9100",device="/dev/sda1",fstype="ext4",mountpoint="/"}'
+        values: '10000000000x30'
+    alert_rule_test:
+      - alertname: HostDiskWillFill
+        eval_time: 2h
+        exp_alerts:

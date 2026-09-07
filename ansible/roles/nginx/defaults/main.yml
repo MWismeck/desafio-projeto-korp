@@ -1,0 +1,19 @@
+# roles/nginx/defaults/main.yml — variáveis sobrescrevíveis da role nginx.
+# `project_root` e `compose_profiles` vêm de ansible/group_vars/all.yml (variáveis do playbook).
+---
+nginx_container_name: nginx
+nginx_conf_dir: "{{ project_root }}/nginx/conf.d"
+# Mesma tag do serviço nginx no compose.yml — usada só para validar a configuração antes de aplicá-la.
+nginx_image: nginx:1.27-alpine
+# A validação PRECISA rodar dentro da korp-net: o conf tem `upstream korp_app { server
+# http-server-projeto-korp:8080; }` e o NGINX resolve o nome do upstream em TEMPO DE CARGA. Fora da
+# rede, `nginx -t` falha com "host not found in upstream" (verificado em 2026-09-06 na
+# nginx:1.27-alpine) — um falso negativo que reprovaria o playbook a cada execução.
+nginx_network: korp-net
+# Arquivo canônico do proxy reverso: o nome NÃO muda e o conteúdo é gerado do template.
+nginx_site_conf: http-server-projeto-korp.conf
+# Server interno na 8081 com `stub_status`, lido pelo nginx-exporter do perfil `full`.
+# Fica no mesmo diretório porque o compose monta ./nginx/conf.d inteiro em /etc/nginx/conf.d.
+nginx_stub_status_conf: stub_status.conf
+nginx_stub_status_port: 8081
+nginx_profile_full: "{{ 'full' in (compose_profiles | default) }}"

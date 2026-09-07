@@ -1,0 +1,141 @@
+# observability/prometheus/rules/external.rules.yml — DISPONIBILIDADE VISTA DE FORA (blackbox_exporter).
+# Criado em 2026-09-06.
+#
+# Por que existe: `up`, `service_up` e o SLI de 5xx são medidos DENTRO da korp-net, direto no app. Nada
+# disso enxerga a borda: NGINX parado, `proxy_pass` errado, upstream 502, `location` removida, contrato
+# de  quebrado. O job `blackbox-http` sonda `http://nginx/projeto-korp` e `http://nginx/healthz`
+# (C3: nome DNS, nunca localhost) — é o caminho REAL do usuário de /.
+#
+# Nível `service:` = {service}; `service_probe:` = {service, probe}. SLO externo: mesma meta de
+# disponibilidade do SLO interno (99,9 %/30 d → budget 0.001), fatores de burn 14.4/6/1 (ALERTING §5).
+# Testes: tests/external.test.yml — promtool test rules.
+groups:
+  - name: http-server-projeto-korp.external.recording
+    rules:
+      # --- disponibilidade por sonda (contrato e liveness), para painel e triagem ---
+      - record: service_probe:probe_success:ratio_avg5m
+        expr: avg by (service, probe) (avg_over_time(probe_success{job="blackbox-http"}[5m]))
+
+      # --- SLI EXTERNO de disponibilidade: só a sonda do caminho do usuário (`/projeto-korp`) ---
+      # avg_over_time de um gauge 0/1 = fração de sondas bem-sucedidas na janela (sem divisão a proteger).
+      - record: service:sli_availability_external:ratio_avg5m
+        expr: avg by (service) (avg_over_time(probe_success{job="blackbox-http",probe="contrato"}[5m]))
+      - record: service:sli_availability_external:ratio_avg30m
+        expr: avg by (service) (avg_over_time(probe_success{job="blackbox-http",probe="contrato"}[30m]))
+      - record: service:sli_availability_external:ratio_avg1h
+        expr: avg by (service) (avg_over_time(probe_success{job="blackbox-http",probe="contrato"}[1h]))
+      - record: service:sli_availability_external:ratio_avg6h
+        expr: avg by (service) (avg_over_time(probe_success{job="blackbox-http",probe="contrato"}[6h]))
+      - record: service:sli_availability_external:ratio_avg3d
+        expr: avg by (service) (avg_over_time(probe_success{job="blackbox-http",probe="contrato"}[3d]))
+
+      # janela do error budget (30 d): existe só para alimentar `slo:external_availability:
+      # error_budget_remaining_ratio30d` do grupo seguinte. Prefixo `service:` porque é SLI CRU
+      #.
+      - record: service:sli_availability_external:ratio_avg30d
+        expr: avg by (service) (avg_over_time(probe_success{job="blackbox-http",probe="contrato"}[30d]))
+
+      # --- latência da sonda: quanto o USUÁRIO espera, incluindo NGINX e rede ---
+      - record: service_probe:probe_duration_seconds:avg5m
+        expr: avg by (service, probe) (avg_over_time(probe_duration_seconds{job="blackbox-http"}[5m]))
+
+  - name: http-server-projeto-korp.external.slo
+    interval: 1m
+    rules:
+      # burn rate = razão de falha externa / (1 - SLO). Constante já resolvida (0.001 = 99,9 %).
+      - record: slo:external_availability:burn_rate5m
+        expr: (1 - service:sli_availability_external:ratio_avg5m) / 0.001
+        labels: {slo: availability_external}
+      - record: slo:external_availability:burn_rate30m
+        expr: (1 - service:sli_availability_external:ratio_avg30m) / 0.001
+        labels: {slo: availability_external}
+      - record: slo:external_availability:burn_rate1h
+        expr: (1 - service:sli_availability_external:ratio_avg1h) / 0.001
+        labels: {slo: availability_external}
+      - record: slo:external_availability:burn_rate6h
+        expr: (1 - service:sli_availability_external:ratio_avg6h) / 0.001
+        labels: {slo: availability_external}
+      - record: slo:external_availability:burn_rate3d
+        expr: (1 - service:sli_availability_external:ratio_avg3d) / 0.001
+        labels: {slo: availability_external}
+
+      # Error budget EXTERNO restante na janela de 30 d, normalizado em [0,1] — mesma fórmula e mesma
+      # convenção da regra interna `slo:availability:error_budget_remaining_ratio30d`
+      #/(1 - objetivo); objetivo 0.999 → 0.001 já resolvido).
+      # `clamp(..., 0, 1)`: sem ele um incidente longo produz -999 e arruína a escala do painel; com
+      # janela de 30 d ainda incompleta o valor pode passar de 1. O orçamento estourado satura em 0 —
+      # a profundidade do estouro está no burn rate acima, que não é clampado.
+      # UMA verdade: o painel LÊ esta série, não a recalcula.
+      - record: slo:external_availability:error_budget_remaining_ratio30d
+        expr: clamp(1 - ((1 - service:sli_availability_external:ratio_avg30d) / 0.001), 0, 1)
+        labels: {slo: availability_external}
+
+  - name: http-server-projeto-korp.external.alerts
+    rules:
+      # ---------- O caminho do usuário está quebrado, mas o APP está são ----------
+      # `probe_success == 0 and on service_up == 1` é o alerta que separa "aplicação caiu" de
+      # "borda caiu": se o app se declara pronto e a sonda através do NGINX falha, o defeito está no
+      # NGINX/rede/proxy_pass — TargetDown e ServiceUnavailable ficam calados nesse cenário.
+      # Métrica crua é aceita aqui pelo mesmo motivo de `up`/`service_up`.
+      - alert: UserPathUnavailable
+        expr: |
+          probe_success{job="blackbox-http"} == 0
+          and on 
+          service_up{job="http-server-projeto-korp"} == 1
+        for: 1m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "{{ $labels.service }} inalcançável pelo caminho do usuário (sonda {{ $labels.probe }})"
+          description: "probe_success == 0 para {{ $labels.instance }} há 1 min COM service_up == 1: o app está são e a borda não entrega. Olhar NGINX (`docker logs nginx`, 502/504), proxy_pass e a rede korp-net."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#userpathunavailable"
+          dashboard_url: "http://localhost:3000/d/korp-edge"
+
+      # ---------- Contrato de  violado (corpo não bate com a regex do módulo korp_contract) ----------
+      - alert: ServiceContractViolated
+        expr: probe_failed_due_to_regex{job="blackbox-http"} == 1
+        for: 1m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "{{ $labels.service }} responde 200 mas fora do contrato"
+          description: "probe_failed_due_to_regex == 1 em {{ $labels.instance }}: o corpo não contém o JSON esperado ({\"nome\":\"Projeto Korp\",\"horario\":...}). HTTP 200 com resposta errada é invisível para o SLI de 5xx — este é o único alerta que pega."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicecontractviolated"
+          dashboard_url: "http://localhost:3000/d/korp-edge"
+
+      # ---------- Burn-rate multiwindow do SLO EXTERNO (mesma forma do SLO interno) ----------
+      - alert: ServiceExternalAvailabilityBurn
+        expr: |
+          (slo:external_availability:burn_rate1h > 14.4
+            and
+            slo:external_availability:burn_rate5m > 14.4)
+          or
+          (slo:external_availability:burn_rate6h > 6
+            and
+            slo:external_availability:burn_rate30m > 6)
+        for: 2m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "{{ $labels.service }} queima error budget de disponibilidade EXTERNA rápido demais"
+          description: "Burn rate {{ printf \"%.2f\" $value }}x visto de fora, pelo NGINX (limite 14.4x em 1h/5m ou 6x em 6h/30m). SLO 99.9 %/30 d. Diferente do burn interno: aqui entram NGINX, rede e contrato."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#serviceexternalavailabilityburn"
+          dashboard_url: "http://localhost:3000/d/slo-overview"
+
+      - alert: ServiceExternalAvailabilityBurn
+        expr: |
+          slo:external_availability:burn_rate3d > 1
+          and
+          slo:external_availability:burn_rate6h > 1
+        for: 15m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "{{ $labels.service }} queima error budget de disponibilidade EXTERNA lentamente"
+          description: "Burn rate {{ printf \"%.2f\" $value }}x sustentado em 3d/6h (limite 1x) na sonda através do NGINX: no ritmo atual o orçamento de 30 d acaba antes do fim da janela."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#serviceexternalavailabilityburn"
+          dashboard_url: "http://localhost:3000/d/slo-overview"

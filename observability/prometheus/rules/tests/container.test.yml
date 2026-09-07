@@ -1,0 +1,227 @@
+# observability/prometheus/rules/tests/container.test.yml — testes unitários da saúde de container.
+# Um caso POSITIVO (todos os modos de falha ativos) e um NEGATIVO (container saudável) por alerta,
+# como exige  /. Rodar: promtool test rules container.test.yml
+rule_files:
+  - ../container.rules.yml
+
+evaluation_interval: 1m
+
+# group_eval_order acrescentado em 2026-09-06: sem ele o promtool ordena os grupos por mapa Go, e a
+# ordem entre grupos e ALEATORIA. Os grupos de alerta leem series gravadas pelo grupo de recording,
+# entao a ordem importa. Hoje estes testes passam so porque o evaluation_interval de 1m cabe no
+# lookback de 5 min; com passo maior o teste falha de forma intermitente (medido em ~30% das
+# execucoes num teste de 30 d). Declarar a ordem torna o resultado deterministico.
+group_eval_order:
+  - korp.container.recording
+  - korp.container.alerts
+
+tests:
+  # ============================================================================================
+  # Caso 1 (POSITIVO): container do serviço em pane — OOM, laço de reinício, throttling do CFS,
+  # memória encostada no limite e cAdvisor sem notícia dele.
+  # As séries do cAdvisor chegam com service="cadvisor" (label do scrape) de propósito: o teste prova
+  # que a recording rule reescreve `service` a partir de `name` (senão o Alertmanager agruparia tudo
+  # sob o serviço "cadvisor").
+  # ============================================================================================
+  - interval: 1m
+    input_series:
+      # OOM: nenhum kill nos 10 primeiros minutos, um kill em t=11m.
+      # O `0` precisa cair DENTRO da janela de 15 min avaliada em t=20m: o Prometheus 3.x tornou o
+      # range selector aberto à esquerda ((t-15m, t]), então um `0` exatamente em t-15m não conta e
+      # o teste passaria no 2.55 e falharia no 3.x. Com o kill em t=11m o caso vale nas duas versões.
+      - series: 'container_oom_events_total{name="http-server-projeto-korp",job="cadvisor",service="cadvisor",instance="cadvisor:8080"}'
+        values: '0x10 1x60'
+      # reinício visto pelo runtime: 4 mudanças de start time e depois estabiliza
+      - series: 'container_start_time_seconds{name="http-server-projeto-korp",job="cadvisor",service="cadvisor",instance="cadvisor:8080"}'
+        values: '1 2 3 4 5x60'
+      # reinício visto pelo processo (perfil padrão, sem cAdvisor)
+      - series: 'process_start_time_seconds{job="http-server-projeto-korp",service="http-server-projeto-korp",instance="http-server-projeto-korp:8080"}'
+        values: '1 2 3 4 5x60'
+      # CFS: 30 s de throttle por minuto (0,5/s) contra 30 s de CPU usada (0,5/s) → razão 0,50
+      - series: 'container_cpu_cfs_throttled_seconds_total{name="http-server-projeto-korp",job="cadvisor",service="cadvisor",instance="cadvisor:8080"}'
+        values: '0+30x60'
+      - series: 'container_cpu_usage_seconds_total{name="http-server-projeto-korp",job="cadvisor",service="cadvisor",instance="cadvisor:8080"}'
+        values: '0+30x60'
+      # memória: 900 MB de working set contra limite de 1 GB → 0,90
+      - series: 'container_memory_working_set_bytes{name="http-server-projeto-korp",job="cadvisor",service="cadvisor",instance="cadvisor:8080"}'
+        values: '900000000x60'
+      - series: 'container_spec_memory_limit_bytes{name="http-server-projeto-korp",job="cadvisor",service="cadvisor",instance="cadvisor:8080"}'
+        values: '1000000000x60'
+      # container_last_seen acompanha o relógio até t=5m e congela em 300 (container sumiu)
+      - series: 'container_last_seen{name="http-server-projeto-korp",job="cadvisor",service="cadvisor",instance="cadvisor:8080"}'
+        values: '0+60x5 300x60'
+    promql_expr_test:
+      # a razão de throttling e a de memória são exatas — servem de prova do cálculo, não só do alerta
+      - expr: container:cpu_cfs_throttled:ratio_rate5m
+        eval_time: 20m
+        exp_samples:
+          - labels: 'container:cpu_cfs_throttled:ratio_rate5m{name="http-server-projeto-korp",service="http-server-projeto-korp"}'
+            value: 0.5
+      - expr: container:memory_working_set:ratio
+        eval_time: 20m
+        exp_samples:
+          - labels: 'container:memory_working_set:ratio{name="http-server-projeto-korp",service="http-server-projeto-korp"}'
+            value: 0.9
+      - expr: container:last_seen_age:seconds
+        eval_time: 20m
+        exp_samples:
+          - labels: 'container:last_seen_age:seconds{name="http-server-projeto-korp",service="http-server-projeto-korp"}'
+            value: 900
+    alert_rule_test:
+      - alertname: ContainerOOMKilled
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: sre
+              name: http-server-projeto-korp
+              service: http-server-projeto-korp
+            exp_annotations:
+              summary: "http-server-projeto-korp foi morto por OOM (container http-server-projeto-korp)"
+              description: "container_oom_events_total subiu nos últimos 15 min: o cgroup estourou o limite de memória. Efeito imediato: conexões cortadas, 5xx e reinício. Ver limite em `docker inspect` e o headroom em container:memory_working_set:ratio."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#containeroomkilled"
+              dashboard_url: "http://localhost:3000/d/korp-container-health"
+
+      - alertname: ContainerRestartLoop
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: sre
+              name: http-server-projeto-korp
+              service: http-server-projeto-korp
+            exp_annotations:
+              summary: "http-server-projeto-korp reinicia em laço (visão do runtime)"
+              description: "container_start_time_seconds mudou 4x na última hora (limite 2). CrashLoop: `docker logs --tail=100 http-server-projeto-korp` e a política de restart do compose."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#containerrestartloop"
+              dashboard_url: "http://localhost:3000/d/korp-container-health"
+
+      - alertname: ServiceRestartLoop
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: sre
+              job: http-server-projeto-korp
+              service: http-server-projeto-korp
+              instance: http-server-projeto-korp:8080
+            exp_annotations:
+              summary: "http-server-projeto-korp reinicia em laço (visão do processo)"
+              description: "process_start_time_seconds mudou 4x na última hora (limite 2) em http-server-projeto-korp:8080. Vale no perfil padrão, sem cAdvisor: o processo está subindo de novo a cada poucos minutos."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicerestartloop"
+              dashboard_url: "http://localhost:3000/d/korp-container-health"
+
+      - alertname: ContainerCPUThrottled
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              team: sre
+              name: http-server-projeto-korp
+              service: http-server-projeto-korp
+            exp_annotations:
+              summary: "http-server-projeto-korp estrangulado pelo CFS (container http-server-projeto-korp)"
+              description: "0.50 do tempo executável foi throttled em 5 min (limite 0.25). É a causa clássica de latência alta com 'CPU baixa': subir `cpus:`/`cpu_quota` ou reduzir trabalho por requisição."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#containercputhrottled"
+              dashboard_url: "http://localhost:3000/d/korp-container-health"
+
+      - alertname: ContainerMemoryNearLimit
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              team: sre
+              name: http-server-projeto-korp
+              service: http-server-projeto-korp
+            exp_annotations:
+              summary: "http-server-projeto-korp perto do limite de memória (container http-server-projeto-korp)"
+              description: "working_set/limite = 0.90 há 10 min (limite 0.85). É o alerta PREVENTIVO do OOM: revisar limite ou investigar vazamento com o perfil de heap."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#containermemorynearlimit"
+              dashboard_url: "http://localhost:3000/d/korp-container-health"
+
+      - alertname: ContainerMissing
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              team: sre
+              name: http-server-projeto-korp
+              service: http-server-projeto-korp
+            exp_annotations:
+              summary: "http-server-projeto-korp sumiu do cAdvisor (container http-server-projeto-korp)"
+              description: "container_last_seen não é atualizado há mais de 120 s: container removido, parado ou o cgroup deixou de existir. Conferir com `docker ps -a --filter name=http-server-projeto-korp`."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#containermissing"
+              dashboard_url: "http://localhost:3000/d/korp-container-health"
+
+  # ============================================================================================
+  # Caso 2 (NEGATIVO): container saudável — nenhum kill, sem reinício, sem throttling, 10 % de
+  # memória usada e last_seen acompanhando o relógio. NENHUM alerta pode disparar.
+  # ============================================================================================
+  - interval: 1m
+    input_series:
+      - series: 'container_oom_events_total{name="http-server-projeto-korp",job="cadvisor",service="cadvisor",instance="cadvisor:8080"}'
+        values: '0x90'
+      - series: 'container_start_time_seconds{name="http-server-projeto-korp",job="cadvisor",service="cadvisor",instance="cadvisor:8080"}'
+        values: '100x90'
+      - series: 'process_start_time_seconds{job="http-server-projeto-korp",service="http-server-projeto-korp",instance="http-server-projeto-korp:8080"}'
+        values: '100x90'
+      - series: 'container_cpu_cfs_throttled_seconds_total{name="http-server-projeto-korp",job="cadvisor",service="cadvisor",instance="cadvisor:8080"}'
+        values: '0x90'
+      - series: 'container_cpu_usage_seconds_total{name="http-server-projeto-korp",job="cadvisor",service="cadvisor",instance="cadvisor:8080"}'
+        values: '0+30x90'
+      - series: 'container_memory_working_set_bytes{name="http-server-projeto-korp",job="cadvisor",service="cadvisor",instance="cadvisor:8080"}'
+        values: '100000000x90'
+      - series: 'container_spec_memory_limit_bytes{name="http-server-projeto-korp",job="cadvisor",service="cadvisor",instance="cadvisor:8080"}'
+        values: '1000000000x90'
+      - series: 'container_last_seen{name="http-server-projeto-korp",job="cadvisor",service="cadvisor",instance="cadvisor:8080"}'
+        values: '0+60x90'
+    promql_expr_test:
+      - expr: container:cpu_cfs_throttled:ratio_rate5m
+        eval_time: 30m
+        exp_samples:
+          - labels: 'container:cpu_cfs_throttled:ratio_rate5m{name="http-server-projeto-korp",service="http-server-projeto-korp"}'
+            value: 0
+      - expr: container:last_seen_age:seconds
+        eval_time: 30m
+        exp_samples:
+          - labels: 'container:last_seen_age:seconds{name="http-server-projeto-korp",service="http-server-projeto-korp"}'
+            value: 0
+    alert_rule_test:
+      - alertname: ContainerOOMKilled
+        eval_time: 30m
+        exp_alerts:
+      - alertname: ContainerRestartLoop
+        eval_time: 30m
+        exp_alerts:
+      - alertname: ServiceRestartLoop
+        eval_time: 30m
+        exp_alerts:
+      - alertname: ContainerCPUThrottled
+        eval_time: 30m
+        exp_alerts:
+      - alertname: ContainerMemoryNearLimit
+        eval_time: 30m
+        exp_alerts:
+      - alertname: ContainerMissing
+        eval_time: 30m
+        exp_alerts:
+
+  # ============================================================================================
+  # Caso 3 (BORDA): container SEM limite de memória (container_spec_memory_limit_bytes = 0).
+  # Sem o filtro `> 0` no denominador a razão viraria +Inf e o alerta dispararia para todo container
+  # sem limite — exatamente o falso positivo que a recording rule evita.
+  # ============================================================================================
+  - interval: 1m
+    input_series:
+      - series: 'container_memory_working_set_bytes{name="nginx",job="cadvisor",service="cadvisor",instance="cadvisor:8080"}'
+        values: '900000000x30'
+      - series: 'container_spec_memory_limit_bytes{name="nginx",job="cadvisor",service="cadvisor",instance="cadvisor:8080"}'
+        values: '0x30'
+    promql_expr_test:
+      - expr: container:memory_working_set:ratio
+        eval_time: 20m
+        exp_samples:
+    alert_rule_test:
+      - alertname: ContainerMemoryNearLimit
+        eval_time: 20m
+        exp_alerts:

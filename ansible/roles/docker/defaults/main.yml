@@ -1,0 +1,11 @@
+# roles/docker/defaults/main.yml — variáveis sobrescrevíveis
+---
+docker_apt_packages:
+  - docker-ce
+  - docker-ce-cli
+  - containerd.io
+  - docker-buildx-plugin
+  - docker-compose-plugin
+docker_users:
+  - "{{ ansible_facts['env']['SUDO_USER'] | default(ansible_facts['user_id']) }}"
+docker_apt_keyring: /etc/apt/keyrings/docker.asc

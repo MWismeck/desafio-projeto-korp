@@ -1,0 +1,80 @@
+# roles/monitoring/defaults/main.yml — variáveis sobrescrevíveis da role de monitoramento
+#.
+#
+# `project_root` e `compose_profiles` são variáveis do PLAYBOOK (quatro roles as leem) e moram em
+# ansible/group_vars/all.yml — não são redefinidas aqui para não criar duas fontes de verdade.
+---
+monitoring_prometheus_dir: "{{ project_root }}/observability/prometheus"
+monitoring_grafana_dir: "{{ project_root }}/observability/grafana"
+
+# Perfil estendido da demo: `-e compose_profiles='["full"]'`.
+monitoring_profile_full: "{{ 'full' in (compose_profiles | default) }}"
+
+# Imagem oficial usada para rodar promtool sem instalar nada no alvo (mesma tag do compose.yml).
+# mesma versao do servidor no compose
+monitoring_promtool_image: prom/prometheus:v3.5.0
+
+# Endpoints publicados no host pelo perfil PADRÃO do compose (só estes dois têm `ports:`).
+monitoring_prometheus_url: http://localhost:9090
+monitoring_grafana_url: http://localhost:3000
+
+# Arquivo de scrape do perfil `full` (12 jobs: nginx, blackbox, cAdvisor, node, Grafana, Alertmanager,
+# OTel Collector, spanmetrics, Tempo, Loki, Pyroscope). O `prometheus.yml` o carrega pelo glob
+# `scrape_config_files: [scrape_*.yml]`; o sufixo `.disabled` NÃO casa o glob, então renomear é o
+# interruptor. Ver a explicação completa em tasks/main.yml.
+monitoring_scrape_full: "{{ monitoring_prometheus_dir }}/scrape_full.yml"
+monitoring_scrape_full_disabled: "{{ monitoring_prometheus_dir }}/scrape_full.yml.disabled"
+
+# Configuração exigida no perfil PADRÃO (os 4 serviços do brief). Caminhos relativos a project_root.
+monitoring_required_files:
+  - observability/prometheus/prometheus.yml
+  - observability/grafana/provisioning/datasources/datasources.yml
+  - observability/grafana/provisioning/dashboards/dashboards.yml
+  - observability/grafana/dashboards/http-server-projeto-korp-dashboard.json
+
+# Configuração consumida SÓ pelos serviços do perfil `full`. Fora do perfil ela é inerte (nenhum
+# container a monta), por isso é exigida apenas no perfil estendido — e não é removida no perfil padrão: apagar arquivo
+# versionado que ninguém lê só sujaria a árvore de trabalho.
+monitoring_required_files_full:
+  - observability/alertmanager/alertmanager.yml
+  - observability/otel/otel-collector.yaml
+  - observability/tempo/tempo.yaml
+  - observability/loki/loki.yaml
+  - observability/alloy/config.alloy
+  - observability/pyroscope/pyroscope.yaml
+  - observability/blackbox/blackbox.yml
+
+# Containers esperados em execução. Perfil padrão = os 4 do brief; perfil estendido acrescenta os 10 do perfil `full`.
+monitoring_containers_base:
+  - http-server-projeto-korp
+  - nginx
+  - prometheus
+  - grafana
+monitoring_containers_full:
+  - alertmanager
+  - otel-collector
+  - tempo
+  - loki
+  - alloy
+  - pyroscope
+  - cadvisor
+  - node-exporter
+  - blackbox-exporter
+  - nginx-exporter
+monitoring_containers_expected: >-
+  {{ monitoring_containers_base
+     + ((monitoring_profile_full | bool) | ternary(monitoring_containers_full,)) }}
+
+# Serviços do perfil `full` cujo healthcheck do compose bate em /ready (tempo:3200/ready,
+# loki:3100/ready). Pyroscope NÃO entra aqui: a imagem 1.8.0 não tem shell nem wget, então o compose
+# não lhe dá healthcheck — a prontidão dele é verificada pelo `up` do Prometheus (tasks/main.yml).
+monitoring_ready_containers_full:
+  - tempo
+  - loki
+monitoring_ready_jobs_full:
+  - tempo
+  - loki
+  - pyroscope
+
+monitoring_ready_retries: 20
+monitoring_ready_delay: 6

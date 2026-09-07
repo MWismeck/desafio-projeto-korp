@@ -1,0 +1,46 @@
+# observability/grafana/provisioning/datasources/datasources.yml — bônus  (Grafana provisionado por arquivo).
+#
+# três pilares CORRELACIONADOS (métrica -> trace -> log -> perfil).
+#
+# Regras que este arquivo cumpre:
+#     é ele que os dashboards (${DS_PROMETHEUS}) e os links de correlação abaixo referenciam.
+#   - access: proxy — o browser fala com o Grafana; o Grafana fala com o serviço pelo nome DNS na korp-net.
+#   - editable: false — mudança de datasource é PR, não clique na UI.
+#   - NENHUM segredo literal. O Grafana expande $VAR/${VAR} a partir
+#     do ambiente do container; por isso todo "$" que pertence a uma EXPRESSÃO (PromQL, $__tags,
+#     $__rate_interval) aparece escapado como "$$" — senão o provisioning tenta expandir como env.
+#
+# Versões mínimas do Grafana usadas aqui (imagem pinada: grafana/grafana:12.1.0):
+#   derivedFields.matcherType    -> Grafana >= 10.1 ("regex" | "label")
+apiVersion: 1
+
+# Renomeou/aposentou uma datasource? Declare aqui — o provisioning não remove sozinho.
+deleteDatasources: 
+
+datasources:
+  # --------------------------------------------------------------------------- MÉTRICAS (pilar 1)
+  - name: Prometheus
+    uid: prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true            # a datasource padrão do org: ${DS_PROMETHEUS} resolve para ela
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: 15s        # = scrape_interval; base de $__rate_interval
+      manageAlerts: false      # alertas vivem só no Prometheus/Alertmanager
+      prometheusType: Prometheus
+      prometheusVersion: "3.5.0"
+      incrementalQuerying: true
+
+  # --------------------------------------------------------------------------- TRACES (pilar 2)
+  - name: Alertmanager
+    uid: alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    editable: false
+    jsonData:
+      implementation: prometheus
+      handleGrafanaManagedAlerts: false

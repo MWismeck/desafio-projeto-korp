@@ -1,0 +1,19 @@
+# ansible/group_vars/all.yml — variáveis do PLAYBOOK, compartilhadas por mais de uma role.
+#
+# POR QUE aqui e não em roles/app/defaults/main.yml (onde estavam até 2026-09-06): `project_root` e
+# `compose_profiles` são lidas por app, nginx, monitoring e validate. Como default de UMA role elas
+# funcionavam por efeito colateral (defaults de role são carregados no início da play), mas escondiam
+# a dependência e violavam `var-naming[no-role-prefix]` do ansible-lint em perfil `production` —
+# regra que existe justamente para impedir esse tipo de acoplamento silencioso.
+# Precedência: `-e` na linha de comando > este arquivo > defaults de role.
+---
+# Raiz do repositório (o playbook vive em <raiz>/ansible/); é onde estão compose.yml, Dockerfile,
+# nginx/ e observability/.
+project_root: "{{ playbook_dir | dirname }}"
+
+# Perfis do compose — a chave da demonstração em duas etapas:
+#           perfil padrão, a ENTREGA: só os 4 serviços do brief (app + nginx + prometheus + grafana).
+#   ['full']  perfil estendido, o bônus: acrescenta alertmanager, otel-collector, tempo, loki, alloy, pyroscope,
+#             cadvisor, node-exporter, blackbox-exporter e nginx-exporter (nenhum publica porta).
+# Perfil estendido:  ansible-playbook -i ansible/inventory.ini ansible/playbook.yml -e compose_profiles='["full"]'
+compose_profiles: 

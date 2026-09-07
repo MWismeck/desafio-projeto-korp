@@ -1,0 +1,191 @@
+# observability/prometheus/scrape_full.yml — jobs de scrape do PERFIL `full`.
+#
+# ESTE ARQUIVO SÓ É COPIADO PARA O ALVO QUANDO `compose_profiles` INCLUI `full`.
+# A demo é em duas etapas:
+#   Perfil padrão (perfil padrão, o que o avaliador roda): app + NGINX + Prometheus + Grafana. A role
+#     `monitoring` do Ansible NÃO copia este arquivo; o glob `scrape_*.yml` de prometheus.yml não casa
+#     nada — o que NÃO é erro (verificado: `promtool check config` sai 0 em v2.55.1 e v3.5.0) — e o
+#     /targets abre 100 % verde, com 2 alvos UP e ZERO alvo vermelho.
+#   Perfil estendido (`docker compose --profile full up -d`): a role copia este arquivo e faz
+#     `POST /-/reload` (--web.enable-lifecycle); os 12 jobs abaixo entram sem reiniciar o Prometheus.
+#
+# Sem essa separação o perfil padrão mostraria ~11 alvos DOWN ao avaliador — alvo vermelho em demo é ruído que
+# não distingue "ainda não subiu" de "quebrado".
+#
+# CONTRATO DO ARQUIVO (promtool é rígido nos dois pontos):
+#   1. a chave de topo é `scrape_configs:` (uma lista YAML solta é rejeitada com
+#      "cannot unmarshal !!seq into config.ScrapeConfigs");
+#   2. nenhum `job_name` daqui pode repetir um de prometheus.yml ("found multiple scrape configs with
+#      job name ..." → falha de carga).
+#
+# Padrões:  (um job por tipo de alvo, limites por scrape), §4 (relabel),
+# §9 (cardinalidade). Validar junto com o config principal:
+#   MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD/observability/prometheus:/cfg" \
+#     --entrypoint promtool prom/prometheus:v3.5.0 check config /cfg/prometheus.yml
+scrape_configs:
+  # ============================================================================================
+  # BORDA — NGINX e a sonda que atravessa o NGINX. Ambos dependem de containers do perfil `full`
+  # (`nginx-exporter` e `blackbox-exporter`), por isso moram aqui e não em prometheus.yml.
+  # ============================================================================================
+
+  # --- NGINX (nginx-prometheus-exporter sobre stub_status): saturação de conexão na borda ---
+  - job_name: nginx
+    metrics_path: /metrics
+    sample_limit: 2000
+    label_limit: 30
+    label_name_length_limit: 200
+    label_value_length_limit: 500
+    static_configs:
+      - targets: ["nginx-exporter:9113"]
+        labels:
+          service: nginx
+          env: local
+          team: sre
+
+  # --- probe externo (blackbox_exporter): disponibilidade VISTA DE FORA, atravessando o NGINX ---
+  # É o único job que mede o caminho do usuário de / e o contrato de 
+  # (o módulo korp_contract usa fail_if_body_not_matches_regexp com "Projeto Korp").
+  #  C3: o alvo é `http://nginx/...` (nome DNS na korp-net), NUNCA http://localhost/... —
+  # dentro do container do blackbox, localhost seria o próprio blackbox.
+  - job_name: blackbox-http
+    metrics_path: /probe
+    params:
+      module: [korp_contract]              # definido em observability/blackbox/blackbox.yml
+    sample_limit: 1000
+    label_limit: 30
+    label_name_length_limit: 200
+    label_value_length_limit: 500
+    static_configs:
+      - targets: ["http://nginx/projeto-korp"]      # caminho do usuário
+        labels:
+          service: http-server-projeto-korp
+          probe: contrato
+          env: local
+          team: sre
+      - targets: ["http://nginx/healthz"]           # liveness visto de fora
+        labels:
+          service: http-server-projeto-korp
+          probe: liveness
+          env: local
+          team: sre
+    relabel_configs:
+      # troca canônica __param_target <-> __address__: o alvo real vira parâmetro da URL do exporter
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance                  # instance = URL sondada (http://nginx/projeto-korp)
+      - target_label: __address__
+        replacement: blackbox-exporter:9115     # quem executa a sonda
+
+  # ============================================================================================
+  # PLATAFORMA DE OBSERVABILIDADE — exporters e os próprios componentes do stack estendido.
+  # ============================================================================================
+
+  # --- blackbox_exporter: métricas DO EXPORTER (não das sondas) ---
+  - job_name: blackbox-exporter
+    metrics_path: /metrics
+    sample_limit: 2000
+    label_limit: 30
+    label_name_length_limit: 200
+    label_value_length_limit: 500
+    static_configs:
+      - targets: ["blackbox-exporter:9115"]
+        labels:
+          service: blackbox-exporter
+          env: local
+          team: sre
+
+  # --- cAdvisor: saúde de container (OOM, restart, throttling CFS, headroom de memória) ---
+  # Teto ALTO: é o alvo mais cardinal da stack (métrica × container × device × interface).
+  - job_name: cadvisor
+    metrics_path: /metrics
+    sample_limit: 50000
+    label_limit: 40
+    label_name_length_limit: 200
+    label_value_length_limit: 500
+    static_configs:
+      - targets: ["cadvisor:8080"]
+        labels:
+          service: cadvisor
+          env: local
+          team: sre
+    metric_relabel_configs:
+      # 2026-09-06 — contenção de cardinalidade. Motivo por linha:
+      # blkio: ~30 séries por container × device; não há alerta nem painel de I/O por container no Korp.
+      - source_labels: [__name__]
+        regex: 'container_blkio_.*'
+        action: drop
+      # conexões TCP/UDP por container: explodem com scanner e não sustentam nenhum alerta atual.
+      - source_labels: [__name__]
+        regex: 'container_network_(tcp|udp|advance_tcp)_.*'
+        action: drop
+      # tasks_state: 5 estados por container, usado só em depuração de kernel.
+      - source_labels: [__name__]
+        regex: 'container_tasks_state'
+        action: drop
+      # métricas de I/O por device do host, sem painel nem alerta.
+      - source_labels: [__name__]
+        regex: 'container_fs_(sector|io_time|io_current|read_seconds|write_seconds)_.*'
+        action: drop
+      # séries SEM label `name` são os cgroups internos do runtime (/docker, /system.slice, ...):
+      # nenhum alerta de container as usa e elas dobram a contagem. As com `name` são MANTIDAS.
+      - source_labels: [__name__, name]
+        regex: 'container_.+;'
+        action: drop
+
+  # --- node_exporter: saúde do host (disco, memória, CPU, carga) ---
+  - job_name: node
+    metrics_path: /metrics
+    sample_limit: 20000
+    label_limit: 40
+    label_name_length_limit: 200
+    label_value_length_limit: 500
+    static_configs:
+      - targets: ["node-exporter:9100"]
+        labels:
+          service: node-exporter
+          env: local
+          team: sre
+    metric_relabel_configs:
+      # 2026-09-06 — o node_exporter traz ~1.000 séries; abaixo só o que nenhum painel/alerta consome.
+      - source_labels: [__name__]
+        regex: 'node_scrape_collector_.*|node_textfile_.*'
+        action: drop
+      # mountpoints efêmeros de container/overlay poluem o alerta de disco (predict_linear).
+      - source_labels: [__name__, fstype]
+        regex: 'node_filesystem_.*;(tmpfs|overlay|squashfs|ramfs|autofs|devtmpfs|nsfs)'
+        action: drop
+      # estatística por CPU lógica de scheduler/softirq: alto volume, sem alerta associado.
+      - source_labels: [__name__]
+        regex: 'node_cpu_guest_seconds_total|node_schedstat_.*|node_softnet_.*'
+        action: drop
+
+  # --- Grafana (perfil full): saúde do painel que a demo usa ---
+  - job_name: grafana
+    metrics_path: /metrics
+    sample_limit: 10000
+    label_limit: 30
+    label_name_length_limit: 200
+    label_value_length_limit: 500
+    static_configs:
+      - targets: ["grafana:3000"]
+        labels:
+          service: grafana
+          env: local
+          team: sre
+
+  # --- Alertmanager (perfil full): sem ele, alerta não vira notificação ---
+  - job_name: alertmanager
+    metrics_path: /metrics
+    sample_limit: 5000
+    label_limit: 30
+    label_name_length_limit: 200
+    label_value_length_limit: 500
+    static_configs:
+      - targets: ["alertmanager:9093"]
+        labels:
+          service: alertmanager
+          env: local
+          team: sre
+
+  # --- OpenTelemetry Collector: telemetria DO PRÓPRIO collector (fila, spans recusados/perdidos) ---

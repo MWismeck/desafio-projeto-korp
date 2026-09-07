@@ -1,0 +1,58 @@
+# ansible/playbook.yml — provisiona TODO o ambiente do Desafio Korp com um único comando:
+#   ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
+# Ordem das roles = ordem do brief. Idempotente: a 2ª execução termina com changed=0.
+#
+# DEMO EM DOIS ATOS:
+#   Perfil padrão — o comando acima, sem flag nenhuma: sobe EXATAMENTE os 4 serviços do brief
+#           (http-server-projeto-korp, nginx, prometheus, grafana) e o /targets abre 100 % verde.
+#   Perfil estendido — o mesmo comando com `-e compose_profiles='["full"]'`: acrescenta o stack estendido de
+#           observabilidade (10 containers) e as verificações que só fazem sentido com ele no ar.
+# O perfil padrão é a entrega; o perfil estendido é o bônus. Nada do perfil estendido pode ser pré-requisito do perfil padrão.
+---
+- name: Provisionar o ambiente do http-server-projeto-korp
+  hosts: all
+  become: true
+  gather_facts: true
+  # Falha em qualquer role interrompe a play ANTES de a role validate poder mentir sobre o ambiente.
+  any_errors_fatal: true
+
+  pre_tasks:
+    - name: Garantir que o alvo é Linux (Debian/Ubuntu)
+      ansible.builtin.assert:
+        that:
+          - ansible_facts['system'] == 'Linux'
+          - ansible_facts['os_family'] == 'Debian'
+        fail_msg: >-
+          O playbook suporta Ubuntu/Debian (WSL2 ou VM).
+          Host: {{ ansible_facts['system'] }}/{{ ansible_facts['os_family'] }}
+      tags: [always]
+
+    - name: Garantir que compose_profiles é uma lista de perfis conhecidos
+      ansible.builtin.assert:
+        that:
+          - compose_profiles is sequence
+          - compose_profiles is not string
+          - (compose_profiles | difference(['full'])) | length == 0
+        fail_msg: >-
+          compose_profiles deve ser uma lista; hoje o único perfil definido no compose.yml é 'full'.
+          Perfil estendido: -e compose_profiles='["full"]'
+      tags: [always]
+
+    - name: Exibir parâmetros da execução
+      ansible.builtin.debug:
+        msg: "project_root={{ project_root }} app_version={{ app_version }} compose_profiles={{ compose_profiles }}"
+      tags: [always]
+
+  roles:
+    - role: docker       #  /  — instala e habilita o Docker Engine + compose plugin
+      tags: [docker]
+    - role: network      #  /  — rede bridge korp-net
+      tags: [network]
+    - role: app          #  /  — build da imagem e docker compose up
+      tags: [app]
+    - role: nginx        #  — http-server-projeto-korp.conf (proxy reverso) + reload
+      tags: [nginx]
+    - role: monitoring   #  — Prometheus/Grafana configurados e no ar (+ perfil full,)
+      tags: [monitoring]
+    - role: validate     #  — requisição HTTP e resposta no console
+      tags: [validate]
