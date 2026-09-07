@@ -1,5 +1,5 @@
 # observability/prometheus/rules/tests/platform.test.yml — testes unitários de borda, saturação,
-# auto-monitoramento e host. Caso positivo e negativo por alerta.
+# auto-monitoramento e host. Caso positivo e negativo por alerta (G-PROM / §6).
 # Rodar: promtool test rules platform.test.yml
 rule_files:
   - ../platform.rules.yml
@@ -20,7 +20,7 @@ tests:
   # Caso 1 (POSITIVO): a plataforma inteira em pane silenciosa —
   # NGINX descartando conexão, fd acabando no app, config do Prometheus não recarregada, grupo de
   # regras falhando, notificação não saindo, span sendo perdido e cardinalidade acima do orçamento.
-  # Nenhum destes aparece no SLI de 5xx: é exatamente o ponto cego que o stack estendido fecha.
+  # Nenhum destes aparece no SLI de 5xx: é exatamente o ponto cego que o padrão ouro fecha.
   # ============================================================================================
   # ============================================================================================
   # Caso 2 (NEGATIVO): plataforma saudável — nada dispara.
@@ -66,4 +66,4 @@ tests:
     alert_rule_test:
       - alertname: HostDiskWillFill
         eval_time: 2h
-        exp_alerts:
+        exp_alerts: []

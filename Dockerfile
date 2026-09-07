@@ -5,9 +5,9 @@
 # (docker exec -it ... sh; apk add --no-cache curl tcpdump) sem rebuild. Mitigações obrigatórias:
 # usuário não-root, base pinada por digest, apk --no-cache, trivy image em.
 
-ARG GO_VERSION=1.24
-# digest de 2026-09-07 (docker buildx imagetools inspect golang:1.24); a tag fica antes do @ para leitura
-FROM golang:${GO_VERSION}@sha256:d2d2bc1c84f7e60d7d2438a3836ae7d0c847f4888464e7ec9ba3a1339a1ee804 AS build
+ARG GO_VERSION=1.25
+# digest de 2026-09-07 (docker buildx imagetools inspect golang:1.25); a tag fica antes do @ para leitura
+FROM golang:${GO_VERSION}@sha256:699337d620559a59b4a2bb298ad59611e535d2ee755a34cf2d2a98f37578dc80 AS build
 
 WORKDIR /src
 ENV CGO_ENABLED=0 GOOS=linux GOFLAGS=-mod=readonly

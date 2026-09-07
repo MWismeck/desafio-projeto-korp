@@ -58,14 +58,14 @@ podem falhar.
 
 | Ferramenta / biblioteca | Versão | Onde é usada | Por que esta, e não a alternativa |
 |---|---|---|---|
-| Go | 1.24 | serviço | Binário estático sem dependência de libc; `net/http` com padrões de método desde a 1.22; `log/slog` na stdlib. |
+| Go | 1.25 (toolchain fixada em 1.25.14) | serviço | Binário estático sem dependência de libc; `net/http` com padrões de método desde a 1.22; `log/slog` na stdlib. A 1.24 saiu de suporte: das 34 falhas de stdlib apontadas pelo `govulncheck`, 20 não têm correção em nenhuma 1.24.x. Com a toolchain fixada, o resultado é zero. |
 | `net/http` + `http.ServeMux` | stdlib | roteamento e servidor | Quatro rotas não justificam framework. `chi` e `gin` foram considerados: adicionam dependência sem ganho aqui. Middleware é `func(http.Handler) http.Handler` puro. |
 | `log/slog` | stdlib | logs JSON | Zero dependência, JSON nativo, handler customizado injeta `trace_id` e `request_id`. `zap` e `zerolog` são mais rápidos, mas o ganho é irrelevante neste volume e o custo é uma API própria. |
 | `github.com/prometheus/client_golang` | ver `go.mod` | `/metrics` | É literalmente "o padrão do Prometheus" que o brief pede: controle total de nomes, buckets e exemplars. OTel Metrics com exporter Prometheus reescreve nomes e muda a semântica do histograma. |
 | `github.com/sethvargo/go-envconfig` | ver `go.mod` | configuração por env | Struct com tags, defaults e validação explícita no boot. `viper` traz `mapstructure`, `fsnotify` e precedência implícita; `koanf` resolve múltiplas fontes, problema que não existe aqui. |
 | `github.com/swaggo/swag` + `http-swagger` | ver `go.mod` | documentação da API em `/swagger/` | Padrão de fato em Go: anotações no handler geram a spec, e o CI falha se ela estiver desatualizada. Alternativa contrato-primeiro com `oapi-codegen` geraria mais código que o serviço inteiro. |
 | Docker Engine + Compose v2 | 27+ / v2 | build e execução | Exigidos pelo brief. |
-| Imagem de build | `golang:1.24` | Dockerfile, estágio 1 | Toolchain oficial; o binário sai estático com `CGO_ENABLED=0`. |
+| Imagem de build | `golang:1.25` pinada por digest | Dockerfile, estágio 1 | Mesma série da toolchain do `go.mod`, para o binário da imagem ser idêntico ao que se compila localmente. |
 | Imagem de runtime | `alpine:3.20` | Dockerfile, estágio 2 | Ver §3.2: shell para diagnóstico em campo, ao custo de uma superfície um pouco maior que a do distroless. |
 | `nginx` | `nginx:1.27-alpine` | proxy reverso | Exigido pelo brief como imagem oficial; a variante Alpine é a mesma distribuição oficial, menor. |
 | `prom/prometheus` | `v3.5.0` | coleta e regras | Série 3.x atual; `promtool` da mesma imagem valida config e regras no CI. |
