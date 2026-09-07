@@ -1,5 +1,5 @@
 # observability/prometheus/rules/tests/platform.test.yml — testes unitários de borda, saturação,
-# auto-monitoramento e host. Caso positivo e negativo por alerta (G-PROM / §6).
+# auto-monitoramento e host. Caso positivo e negativo por alerta.
 # Rodar: promtool test rules platform.test.yml
 rule_files:
   - ../platform.rules.yml
@@ -19,12 +19,178 @@ tests:
   # ============================================================================================
   # Caso 1 (POSITIVO): a plataforma inteira em pane silenciosa —
   # NGINX descartando conexão, fd acabando no app, config do Prometheus não recarregada, grupo de
-  # regras falhando, notificação não saindo, span sendo perdido e cardinalidade acima do orçamento.
-  # Nenhum destes aparece no SLI de 5xx: é exatamente o ponto cego que o padrão ouro fecha.
+  # regras falhando, notificação não saindo e cardinalidade acima do orçamento.
+  # Nenhum destes aparece no SLI de 5xx do serviço: é o ponto cego que estes alertas fecham.
   # ============================================================================================
+  - interval: 1m
+    input_series:
+      # NGINX: aceita 60/min (1/s), atende 30/min (0,5/s) → 0,50 conexão/s descartada
+      - series: 'nginx_connections_accepted{job="nginx",service="nginx",instance="nginx-exporter:9113"}'
+        values: '0+60x40'
+      - series: 'nginx_connections_handled{job="nginx",service="nginx",instance="nginx-exporter:9113"}'
+        values: '0+30x40'
+      # descritores: 900 de 1000 → 0,90
+      - series: 'process_open_fds{job="http-server-projeto-korp",service="http-server-projeto-korp",instance="http-server-projeto-korp:8080"}'
+        values: '900x40'
+      - series: 'process_max_fds{job="http-server-projeto-korp",service="http-server-projeto-korp",instance="http-server-projeto-korp:8080"}'
+        values: '1000x40'
+      # reload do config falhou
+      - series: 'prometheus_config_last_reload_successful{job="prometheus",service="prometheus",instance="localhost:9090"}'
+        values: '0x40'
+      # 6 falhas de avaliação por minuto → 0,1/s
+      - series: 'prometheus_rule_evaluation_failures_total{job="prometheus",service="prometheus",instance="localhost:9090",rule_group="http-server-projeto-korp.slo"}'
+        values: '0+6x40'
+      # 6 notificações falhadas por minuto → 0,1/s
+      - series: 'alertmanager_notifications_failed_total{job="alertmanager",service="alertmanager",instance="alertmanager:9093",integration="webhook"}'
+        values: '0+6x40'
+      # 120 spans perdidos por minuto → 2/s (nome antigo, sem _total: a regex da regra cobre os dois)
+      # cardinalidade acima do orçamento de 100k
+      - series: 'prometheus_tsdb_head_series{job="prometheus",service="prometheus",instance="localhost:9090"}'
+        values: '150000x40'
+    promql_expr_test:
+      - expr: instance:nginx_connections_dropped:rate5m
+        eval_time: 20m
+        exp_samples:
+          - labels: 'instance:nginx_connections_dropped:rate5m{job="nginx",service="nginx",instance="nginx-exporter:9113"}'
+            value: 0.5
+      - expr: instance:process_open_fds:ratio
+        eval_time: 20m
+        exp_samples:
+          - labels: 'instance:process_open_fds:ratio{job="http-server-projeto-korp",service="http-server-projeto-korp",instance="http-server-projeto-korp:8080"}'
+            value: 0.9
+    alert_rule_test:
+      - alertname: NginxConnectionsSaturated
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              team: sre
+              job: nginx
+              service: nginx
+              instance: nginx-exporter:9113
+            exp_annotations:
+              summary: "nginx está descartando conexões TCP na borda"
+              description: "accepted - handled = 0.50 conexões/s descartadas em 5 min (limite 0). O usuário vê connection reset, não 5xx — e nenhum SLI de 5xx registra isso. Subir worker_connections/limites de fd do NGINX."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#nginxconnectionssaturated"
+              dashboard_url: "http://localhost:3000/d/korp-edge"
+
+      - alertname: ProcessFileDescriptorsNearLimit
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              team: sre
+              job: http-server-projeto-korp
+              service: http-server-projeto-korp
+              instance: http-server-projeto-korp:8080
+            exp_annotations:
+              summary: "http-server-projeto-korp perto do limite de descritores de arquivo"
+              description: "process_open_fds/process_max_fds = 0.90 há 10 min em http-server-projeto-korp:8080 (limite 0.8). Ao chegar a 1 o processo para de aceitar conexão: vazamento de socket/arquivo ou LimitNOFILE baixo."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#processfiledescriptorsnearlimit"
+              dashboard_url: "http://localhost:3000/d/korp-container-health"
+
+      - alertname: PrometheusConfigReloadFailed
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: sre
+              job: prometheus
+              service: prometheus
+              instance: localhost:9090
+            exp_annotations:
+              summary: "prometheus está rodando com uma configuração ANTIGA"
+              description: "prometheus_config_last_reload_successful == 0 há 5 min: o último reload falhou e o processo segue com o config anterior. Jobs/regras novos NÃO estão valendo. `docker logs prometheus` e `promtool check config`."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#prometheusconfigreloadfailed"
+              dashboard_url: "http://localhost:3000/d/http-server-projeto-korp"
+
+      - alertname: PrometheusRuleEvaluationFailing
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: sre
+              job: prometheus
+              service: prometheus
+              instance: localhost:9090
+              rule_group: http-server-projeto-korp.slo
+            exp_annotations:
+              summary: "prometheus não consegue avaliar o grupo de regras http-server-projeto-korp.slo"
+              description: "prometheus_rule_evaluation_failures_total sobe a 0.1000/s há 10 min: recording rules paradas = SLI e burn-rate CONGELADOS, alerta que não dispara. Ver /rules (health != ok)."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#prometheusruleevaluationfailing"
+              dashboard_url: "http://localhost:3000/d/http-server-projeto-korp"
+
+      - alertname: AlertmanagerNotificationsFailing
+        eval_time: 20m
+        exp_alerts:
+          - exp_labels:
+              severity: critical
+              team: sre
+              job: alertmanager
+              service: alertmanager
+              instance: alertmanager:9093
+              integration: webhook
+            exp_annotations:
+              summary: "alertmanager não entrega notificação pela integração webhook"
+              description: "alertmanager_notifications_failed_total sobe a 0.1000/s há 10 min: o alerta dispara e NINGUÉM é avisado. Conferir o receiver e a URL do webhook."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#alertmanagernotificationsfailing"
+              dashboard_url: "http://localhost:3000/d/http-server-projeto-korp"
+      - alertname: PrometheusHeadSeriesHigh
+        eval_time: 40m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              team: sre
+              job: prometheus
+              service: prometheus
+              instance: localhost:9090
+            exp_annotations:
+              summary: "prometheus acima do orçamento de cardinalidade"
+              description: "prometheus_tsdb_head_series = 150000 (orçamento de 100000 séries). Triagem: topk(10, count by (__name__)({__name__=~\".+\"})). Corrigir na origem; metric_relabel_configs é curativo."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#prometheusheadserieshigh"
+              dashboard_url: "http://localhost:3000/d/http-server-projeto-korp"
+
   # ============================================================================================
   # Caso 2 (NEGATIVO): plataforma saudável — nada dispara.
   # ============================================================================================
+  - interval: 1m
+    input_series:
+      - series: 'nginx_connections_accepted{job="nginx",service="nginx",instance="nginx-exporter:9113"}'
+        values: '0+60x40'
+      - series: 'nginx_connections_handled{job="nginx",service="nginx",instance="nginx-exporter:9113"}'
+        values: '0+60x40'
+      - series: 'process_open_fds{job="http-server-projeto-korp",service="http-server-projeto-korp",instance="http-server-projeto-korp:8080"}'
+        values: '120x40'
+      - series: 'process_max_fds{job="http-server-projeto-korp",service="http-server-projeto-korp",instance="http-server-projeto-korp:8080"}'
+        values: '1048576x40'
+      - series: 'prometheus_config_last_reload_successful{job="prometheus",service="prometheus",instance="localhost:9090"}'
+        values: '1x40'
+      - series: 'prometheus_rule_evaluation_failures_total{job="prometheus",service="prometheus",instance="localhost:9090",rule_group="http-server-projeto-korp.slo"}'
+        values: '0x40'
+      - series: 'alertmanager_notifications_failed_total{job="alertmanager",service="alertmanager",instance="alertmanager:9093",integration="webhook"}'
+        values: '0x40'
+      - series: 'prometheus_tsdb_head_series{job="prometheus",service="prometheus",instance="localhost:9090"}'
+        values: '4200x40'
+    alert_rule_test:
+      - alertname: NginxConnectionsSaturated
+        eval_time: 40m
+        exp_alerts: []
+      - alertname: ProcessFileDescriptorsNearLimit
+        eval_time: 40m
+        exp_alerts: []
+      - alertname: PrometheusConfigReloadFailed
+        eval_time: 40m
+        exp_alerts: []
+      - alertname: PrometheusRuleEvaluationFailing
+        eval_time: 40m
+        exp_alerts: []
+      - alertname: AlertmanagerNotificationsFailing
+        eval_time: 40m
+        exp_alerts: []
+      - alertname: PrometheusHeadSeriesHigh
+        eval_time: 40m
+        exp_alerts: []
+
   # ============================================================================================
   # Caso 3 (POSITIVO): disco do host caindo 50 MB a cada 5 min — predict_linear projeta zero
   # dentro de 4 h e já há menos de 30 % livre. `interval: 5m` porque a janela da regra é de 6 h.

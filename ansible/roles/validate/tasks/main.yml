@@ -4,7 +4,7 @@
 # No perfil `full` a role acrescenta a prova que o  sozinho não dá: o `uri` abaixo é um
 # teste de aceite executado UMA vez, no fim do provisionamento; `probe_success` é a mesma verificação
 # repetida a cada 15 s pelo blackbox-exporter, de fora, atravessando o NGINX. Se ela não estiver
-# verde, o caminho do usuário não está observado — e é exatamente esse o ponto cego que o 
+# verde, o caminho do usuário não está observado — e é exatamente esse o ponto cego que o
 # existe para fechar. Por isso a falha aqui é falha do playbook, não aviso.
 ---
 - name: Aguardar a porta 80 aceitar conexão (NGINX publicado no host)
@@ -108,12 +108,11 @@
   ansible.builtin.debug:
     msg: >-
       {{ validate_summary_base
-         + ((validate_profile_full | bool) | ternary(validate_summary_full,)) }}
+         + ((validate_profile_full | bool) | ternary(validate_summary_full, [])) }}
   vars:
     validate_summary_base:
       - "Serviço: http://localhost/projeto-korp (via NGINX)"
       - "Prometheus: http://localhost:9090/targets"
       - "Grafana: http://localhost:3000 (dashboard http-server-projeto-korp)"
     validate_summary_full:
-      - "Perfil full ativo: traces, logs, perfis e sonda externa no ar"
-      - "Tempo/Loki/Pyroscope: sem porta publicada — consulte pelos datasources do Grafana"
+      - "Perfil full ativo: sonda externa, cAdvisor, node-exporter e nginx-exporter no ar"
