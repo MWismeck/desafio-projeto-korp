@@ -16,4 +16,4 @@ project_root: "{{ playbook_dir | dirname }}"
 #   ['full']  perfil estendido, o bônus: acrescenta alertmanager, otel-collector, tempo, loki, alloy, pyroscope,
 #             cadvisor, node-exporter, blackbox-exporter e nginx-exporter (nenhum publica porta).
 # Perfil estendido:  ansible-playbook -i ansible/inventory.ini ansible/playbook.yml -e compose_profiles='["full"]'
-compose_profiles: 
+compose_profiles:

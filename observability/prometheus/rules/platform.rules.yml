@@ -115,7 +115,7 @@ groups:
           team: sre
         annotations:
           summary: "{{ $labels.service }} acima do orçamento de cardinalidade"
-          description: "prometheus_tsdb_head_series = {{ printf \"%.0f\" $value }} (orçamento 100000,). Triagem: topk(10, count by (__name__)({__name__=~\".+\"})). Corrigir na origem; metric_relabel_configs é curativo."
+          description: "prometheus_tsdb_head_series = {{ printf \"%.0f\" $value }} (orçamento de 100000 séries). Triagem: topk(10, count by (__name__)({__name__=~\".+\"})). Corrigir na origem; metric_relabel_configs é curativo."
           runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#prometheusheadserieshigh"
           dashboard_url: "http://localhost:3000/d/http-server-projeto-korp"
 
