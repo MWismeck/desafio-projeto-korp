@@ -96,6 +96,7 @@ desktop.ini
 __pycache__/
 *.pyc
 
-# artefato de runtime do interruptor do perfil estendido da demo: a role monitoring renomeia
-# scrape_full.yml quando o perfil `full` esta desligado
-observability/prometheus/scrape_full.yml.disabled
+# O versionado e o scrape_full.yml.disabled: no perfil padrao o Prometheus nao pode ver esses jobs,
+# senao o /targets abre com alvos vermelhos de containers que nem existem. Quem ativa e o `make up-full`
+# ou a role monitoring do Ansible, produzindo este arquivo em tempo de execucao.
+observability/prometheus/scrape_full.yml

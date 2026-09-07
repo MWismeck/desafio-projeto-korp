@@ -10,19 +10,23 @@ groups:
       - record: service:http_requests_errors:rate5m
         expr: sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code=~"5.."}[5m]))
 
-      # SLI de disponibilidade = 1 - 5xx/total, por janela
+      # SLI de disponibilidade = BONS/total, por janela.
+      # Nao usar `1 - 5xx/total`: sem nenhum 5xx a serie do numerador nao existe, a divisao devolve
+      # vazio e o SLI fica em branco EXATAMENTE quando o servico esta perfeito. Medido em 2026-09-07
+      # com o stack no ar: 60 requisicoes, zero erros, SLI vazio. Com `code!~"5.."` o numerador
+      # sempre existe enquanto houver trafego.
       - record: service:sli_availability:ratio_rate5m
-        expr: 1 - (sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code=~"5.."}[5m])) / clamp_min(sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[5m])), 1e-9))
+        expr: sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code!~"5.."}[5m])) / clamp_min(sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[5m])), 1e-9)
       - record: service:sli_availability:ratio_rate30m
-        expr: 1 - (sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code=~"5.."}[30m])) / clamp_min(sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[30m])), 1e-9))
+        expr: sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code!~"5.."}[30m])) / clamp_min(sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[30m])), 1e-9)
       - record: service:sli_availability:ratio_rate1h
-        expr: 1 - (sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code=~"5.."}[1h])) / clamp_min(sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[1h])), 1e-9))
+        expr: sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code!~"5.."}[1h])) / clamp_min(sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[1h])), 1e-9)
       - record: service:sli_availability:ratio_rate6h
-        expr: 1 - (sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code=~"5.."}[6h])) / clamp_min(sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[6h])), 1e-9))
+        expr: sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code!~"5.."}[6h])) / clamp_min(sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[6h])), 1e-9)
       - record: service:sli_availability:ratio_rate3d
-        expr: 1 - (sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code=~"5.."}[3d])) / clamp_min(sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[3d])), 1e-9))
+        expr: sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code!~"5.."}[3d])) / clamp_min(sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[3d])), 1e-9)
       - record: service:sli_availability:ratio_rate30d
-        expr: 1 - (sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code=~"5.."}[30d])) / clamp_min(sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[30d])), 1e-9))
+        expr: sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code!~"5.."}[30d])) / clamp_min(sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[30d])), 1e-9)
 
       # SLI de latência = requisições < 300 ms / total, por janela
       - record: service:sli_latency_good:ratio_rate5m
