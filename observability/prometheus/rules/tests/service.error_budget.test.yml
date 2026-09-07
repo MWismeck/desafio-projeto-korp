@@ -62,11 +62,16 @@ tests:
       - series: 'http_requests_total{service="http-server-projeto-korp",job="http-server-projeto-korp",instance="http-server-projeto-korp:8080",method="GET",route="/projeto-korp",code="500"}'
         values: '0+6x130'
     promql_expr_test:
-      - expr: service:sli_availability:ratio_rate30d
+      # A razao BONS/total devolve 0.9994999999999999; o promtool compara `value:` por igualdade
+      # EXATA. Mesma tecnica do orcamento logo abaixo: asseverar a faixa, nao o literal ruidoso.
+      - expr: |
+          (service:sli_availability:ratio_rate30d > bool 0.99949)
+          *
+          (service:sli_availability:ratio_rate30d < bool 0.99951)
         eval_time: 30d6h
         exp_samples:
-          - labels: 'service:sli_availability:ratio_rate30d{service="http-server-projeto-korp"}'
-            value: 0.9995
+          - labels: '{service="http-server-projeto-korp"}'
+            value: 1
       # `1 - (1 - 0,9995)/0,001` NÃO é exato em ponto flutuante (dá 0.5000000000000551) e o promtool
       # compara `value:` por igualdade EXATA. Asseverar o literal ruidoso amarraria o teste a uma
       # versão do Go/PromQL; a asserção abaixo é determinística: vale 1 se, e somente se, o orçamento

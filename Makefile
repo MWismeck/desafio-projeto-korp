@@ -42,13 +42,16 @@ docker: ## imagem local
 	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t $(APP):$(VERSION)  .
 
 up: ## os quatro serviços do desafio (app + nginx + prometheus + grafana)
+	@rm -f observability/prometheus/scrape_full.yml
 	VERSION=$(VERSION) docker compose up -d --build --wait
 
 up-full: ## + alertmanager, cadvisor, node-exporter, blackbox-exporter, nginx-exporter
+	@cp observability/prometheus/scrape_full.yml.disabled observability/prometheus/scrape_full.yml
 	VERSION=$(VERSION) docker compose --profile full up -d --build --wait
 
 down:
 	docker compose --profile full down -v --remove-orphans
+	@rm -f observability/prometheus/scrape_full.yml
 
 logs:
 	docker compose logs -f --tail=100 $(APP) nginx
