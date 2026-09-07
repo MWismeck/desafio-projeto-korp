@@ -4,10 +4,10 @@ package api
 import "github.com/swaggo/swag"
 
 const docTemplate = `{
-    "schemes": {{ marshal.Schemes }},
+    "schemes": {{ marshal .Schemes }},
     "swagger": "2.0",
     "info": {
-        "description": "{{escape.Description}}",
+        "description": "{{escape .Description}}",
         "title": "{{.Title}}",
         "contact": {},
         "version": "{{.Version}}"
@@ -18,9 +18,11 @@ const docTemplate = `{
         "/projeto-korp": {
             "get": {
                 "description": "Returns the project name and the current time in UTC (RFC 3339), resolved on every request.",
-                "produces": ["application/json"
+                "produces": [
+                    "application/json"
                 ],
-                "tags": ["projeto-korp"
+                "tags": [
+                    "projeto-korp"
                 ],
                 "summary": "Project name and current UTC time",
                 "responses": {
@@ -97,7 +99,7 @@ var SwaggerInfo = &swag.Spec{
 	Version:          "1.0.0",
 	Host:             "",
 	BasePath:         "/",
-	Schemes:          string{},
+	Schemes:          []string{},
 	Title:            "http-server-projeto-korp",
 	Description:      "Serviço HTTP do Desafio DevOps \"Projeto Korp\": GET /projeto-korp devolve o nome do projeto e o horário atual em UTC, resolvido a cada requisição.",
 	InfoInstanceName: "swagger",
@@ -106,6 +108,6 @@ var SwaggerInfo = &swag.Spec{
 	RightDelim:       "}}",
 }
 
-func init {
-	swag.Register(SwaggerInfo.InstanceName, SwaggerInfo)
+func init() {
+	swag.Register(SwaggerInfo.InstanceName(), SwaggerInfo)
 }

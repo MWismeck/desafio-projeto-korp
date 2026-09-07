@@ -58,7 +58,7 @@ groups:
       # --- idade da última amostra do container (s): cresce quando o container some ---
       - record: container:last_seen_age:seconds
         expr: |
-          label_replace(time - max by (name) (container_last_seen{name=~".+"}),
+          label_replace(time() - max by (name) (container_last_seen{name=~".+"}),
             "service", "$1", "name", "(.+)")
 
   - name: korp.container.alerts

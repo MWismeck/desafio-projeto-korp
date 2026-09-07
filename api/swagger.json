@@ -11,9 +11,11 @@
         "/projeto-korp": {
             "get": {
                 "description": "Returns the project name and the current time in UTC (RFC 3339), resolved on every request.",
-                "produces": ["application/json"
+                "produces": [
+                    "application/json"
                 ],
-                "tags": ["projeto-korp"
+                "tags": [
+                    "projeto-korp"
                 ],
                 "summary": "Project name and current UTC time",
                 "responses": {
