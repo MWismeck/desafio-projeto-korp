@@ -30,7 +30,7 @@ ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
 Ao final, a última tarefa imprime o JSON do serviço. Rodar de novo termina com `changed=0`: o playbook é
 idempotente.
 
-**Pré-requisitos:** `ansible-core` 2.17 ou mais novo, e `sudo` no alvo. No WSL2, o Docker precisa de
+**Pré-requisitos:** `ansible-core` 2.17 ou mais novo, e `sudo` no alvo. Para desenvolver, Go 1.25 (o `go.mod` fixa a toolchain em 1.25.14, que o Go baixa sozinho se você tiver uma versão anterior). No WSL2, o Docker precisa de
 `systemd=true` em `/etc/wsl.conf` para que o serviço suba.
 
 ### Só o Compose, para desenvolver

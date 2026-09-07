@@ -1,6 +1,10 @@
 module github.com/MWismeck/desafio-projeto-korp
 
-go 1.24.3
+go 1.25.0
+
+// toolchain fixada na versao com as correcoes de seguranca da stdlib: as falhas
+// relatadas pelo govulncheck em 1.24.x e 1.25.0 so tem correcao a partir da 1.25.13.
+toolchain go1.25.14
 
 require (
 	github.com/prometheus/client_golang v1.23.2
