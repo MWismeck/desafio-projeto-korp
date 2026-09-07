@@ -1,4 +1,4 @@
-#.dockerignore — contexto mínimo
+# .dockerignore — contexto mínimo
 .git
 .github
 .agents

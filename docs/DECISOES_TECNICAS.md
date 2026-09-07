@@ -87,7 +87,7 @@ peças que podem falhar.
 | Por quê | A stdlib basta para essas rotas. UTC dentro do handler porque o brief exige "resolvido dinamicamente a cada requisição"; RFC 3339 é o formato padrão de `time.Time` em JSON e não depende do fuso do container. |
 | Alternativas consideradas | Framework HTTP (dependência sem ganho); `time.Now` sem `.UTC` (viola o brief se o `TZ` do container mudar); horário calculado no boot (viola "a cada requisição"). |
 | Trade-offs | Sem framework, o middleware de métricas, logs e recuperação de panic é escrito à mão: mais código, menos dependência. |
-| Como validar | `go test -race./...` cobre handler com relógio injetado, 405 para métodos errados e o caso de duas requisições seguidas devolverem horários diferentes. Pela borda: `curl -s localhost/projeto-korp` duas vezes. |
+| Como validar | `go test -race ./...` cobre handler com relógio injetado, 405 para métodos errados e o caso de duas requisições seguidas devolverem horários diferentes. Pela borda: `curl -s localhost/projeto-korp` duas vezes. |
 | Clean code aplicado | Um comentário é uma frase que explica o porquê; godoc em todo identificador exportado; nenhum número mágico; todo erro envolvido com contexto; sem variável global mutável; handler recebe o relógio e as métricas por injeção. |
 
 ### 3.2 Dockerfile — build e execução em container

@@ -1,4 +1,4 @@
-#.hadolint.yaml — gate.
+# .hadolint.yaml — gate.
 failure-threshold: warning
 trustedRegistries:
   - docker.io

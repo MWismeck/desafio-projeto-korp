@@ -1,4 +1,4 @@
-#.github/workflows/ci.yml — pipeline do http-server-projeto-korp.
+# .github/workflows/ci.yml — pipeline do http-server-projeto-korp.
 #
 # Cada job chama a ferramenta diretamente, para que qualquer pessoa leia o YAML e entenda o que é
 # verificado sem depender de scripts locais. O CI é confirmação: os mesmos checks rodam antes do commit.
@@ -41,24 +41,24 @@ jobs:
           go install github.com/swaggo/swag/cmd/swag@v1.16.4
 
       - name: Build estático (é o binário que vai para a imagem)
-        run: CGO_ENABLED=0 GOOS=linux go build -trimpath./...
+        run: CGO_ENABLED=0 GOOS=linux go build -trimpath ./...
 
       - name: go vet
-        run: go vet./...
+        run: go vet ./...
 
       - name: golangci-lint
-        run: golangci-lint run./...
+        run: golangci-lint run ./...
 
       - name: Testes com detector de corrida e cobertura
         run: |
-          go test -race -shuffle=on -count=1 -coverprofile=coverage.out./...
+          go test -race -shuffle=on -count=1 -coverprofile=coverage.out ./...
           go tool cover -func=coverage.out | tail -1
 
       - name: gosec
-        run: gosec -quiet./...
+        run: gosec -quiet ./...
 
       - name: govulncheck
-        run: govulncheck./...
+        run: govulncheck ./...
 
       - name: Swagger gerado está em dia com o código
         run: |
@@ -67,7 +67,7 @@ jobs:
             echo "::error::api/ desatualizada — rode 'make swagger' e versione o resultado"; exit 1; }
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
-        if: always
+        if: always()
         with:
           name: coverage
           path: coverage.out
@@ -100,7 +100,7 @@ jobs:
         run: docker run --rm -i -v "$PWD/.hadolint.yaml:/.config/hadolint.yaml:ro" hadolint/hadolint:2.12.0 < Dockerfile
 
       - name: docker build
-        run: docker build --build-arg VERSION="${GITHUB_SHA::7}" --build-arg COMMIT="${GITHUB_SHA::7}" -t http-server-projeto-korp:ci.
+        run: docker build --build-arg VERSION="${GITHUB_SHA::7}" --build-arg COMMIT="${GITHUB_SHA::7}" -t http-server-projeto-korp:ci .
 
       - name: trivy (imagem)
         run: |
@@ -130,11 +130,11 @@ jobs:
           done
 
       - name: Logs em caso de falha
-        if: failure
+        if: failure()
         run: docker compose logs --no-color --tail=200
 
       - name: Derruba o stack
-        if: always
+        if: always()
         run: docker compose --profile full down -v --remove-orphans
 
   observability:

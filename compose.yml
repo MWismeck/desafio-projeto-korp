@@ -85,7 +85,7 @@ services:
     expose:
       - "8081"                                    # stub_status, só dentro de korp-net (ver nginx/conf.d/stub_status.conf)
     volumes:
-      -./nginx/conf.d:/etc/nginx/conf.d:ro       # / (http-server-projeto-korp.conf + stub_status.conf)
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro       # / (http-server-projeto-korp.conf + stub_status.conf)
     depends_on:
       http-server-projeto-korp:
         condition: service_healthy                # C3: subir o proxy antes do upstream só produz 502 na demo
@@ -152,7 +152,7 @@ services:
       # traceToLogs/traceToProfiles e o painel de flamegraph dependem destas features nas 11.x.
       GF_FEATURE_TOGGLES_ENABLE: ${GF_FEATURE_TOGGLES_ENABLE:-traceToProfiles,traceqlEditor}
     volumes:
-      -./observability/grafana/provisioning:/etc/grafana/provisioning:ro   # bônus 
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro   # bônus 
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:

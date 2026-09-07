@@ -3,7 +3,7 @@
 # Rodar: promtool test rules external.test.yml
 #
 # Nota: `env` e `team` das séries reais vêm de static_configs.labels do job blackbox-http
-#. Os testes abaixo modelam só o que a REGRA usa.
+# . Os testes abaixo modelam só o que a REGRA usa.
 rule_files:
   - ../external.rules.yml
 

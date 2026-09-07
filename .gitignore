@@ -1,5 +1,5 @@
 # ---------------------------------------------------------------------------
-#.gitignore — serviço Go + Docker/Compose + observabilidade + Ansible
+# .gitignore — serviço Go + Docker/Compose + observabilidade + Ansible
 # Regra: segredos e artefatos gerados nunca entram no repositório.
 # ---------------------------------------------------------------------------
 
@@ -65,7 +65,7 @@ compose.override.yml
 /.ansible/
 
 # --- Framework de desenvolvimento local ------------------
-#.agents/ (conhecimento, gates, memória),.claude/ (hooks, subagentes, skills), scripts/ (runner de
+# .agents/ (conhecimento, gates, memória),.claude/ (hooks, subagentes, skills), scripts/ (runner de
 # gates) e CLAUDE.md são ferramental de engenharia assistida; o repositório público contém só o produto.
 # O gate continua obrigatório antes de commitar — ele só não é versionado.
 .agents/

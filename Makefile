@@ -16,19 +16,19 @@ build: ## binário local com versão injetada
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(APP) ./cmd/$(APP)
 
 run: build ## roda o binário local na porta do.env.example
-./bin/$(APP)
+	
 
 test: ## testes com detector de corrida e cobertura
 	go test -race -shuffle=on -count=1 -coverprofile=coverage.out ./...
 	go tool cover -func=coverage.out | tail -1
 
 lint: ## go vet + golangci-lint
-	go vet./...
+	go vet ./...
 	golangci-lint run ./...
 
 sec: ## gosec + govulncheck
-	gosec -quiet./...
-	govulncheck./...
+	gosec -quiet ./...
+	govulncheck ./...
 
 swagger: ## regenera api/ a partir das anotações
 	swag init -g cmd/$(APP)/main.go -o api
@@ -39,7 +39,7 @@ swagger-check: swagger ## falha se api/ estiver desatualizada (mesmo check do CI
 check: lint test sec swagger-check promtool-test ## tudo que o CI verifica, localmente
 
 docker: ## imagem local
-	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t $(APP):$(VERSION) .
+	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t $(APP):$(VERSION)  .
 
 up: ## stack mínima do brief (app + nginx + prometheus + grafana)
 	VERSION=$(VERSION) docker compose up -d --build --wait
@@ -76,7 +76,7 @@ bench: ## benchmarks do hot path
 	go test -run '^$$' -bench . -benchmem -count=3 ./...
 
 sbom: ## SBOM em SPDX
-	syft dir:. -o spdx-json > sbom.spdx.json
+	syft dir: . -o spdx-json > sbom.spdx.json
 
 clean:
 	rm -rf bin coverage.out sbom.spdx.json

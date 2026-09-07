@@ -1,5 +1,5 @@
 # roles/validate/defaults/main.yml — variáveis sobrescrevíveis da validação final
-#. `compose_profiles` vem de ansible/group_vars/all.yml.
+# . `compose_profiles` vem de ansible/group_vars/all.yml.
 ---
 validate_host: localhost
 validate_port: 80

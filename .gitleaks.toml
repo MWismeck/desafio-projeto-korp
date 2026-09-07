@@ -1,4 +1,4 @@
-#.gitleaks.toml — gate.
+# .gitleaks.toml — gate.
 title = "http-server-projeto-korp"
 
 [extend]
