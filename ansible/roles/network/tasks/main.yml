@@ -1,0 +1,20 @@
+# roles/network/tasks/main.yml — rede bridge korp-net. Mesmo nome que o compose declara
+# (networks.korp-net.name) para que os dois caminhos sejam idempotentes entre si.
+---
+- name: Criar a rede Docker bridge korp-net
+  community.docker.docker_network:
+    name: "{{ network_name }}"
+    driver: "{{ network_driver }}"
+    state: present
+
+- name: Inspecionar a rede korp-net
+  community.docker.docker_network_info:
+    name: "{{ network_name }}"
+  register: network_info
+
+- name: Confirmar que a rede existe e é bridge
+  ansible.builtin.assert:
+    that:
+      - network_info.exists
+      - network_info.network.Driver == network_driver
+    fail_msg: "{{ network_name }} não existe ou não é {{ network_driver }}"

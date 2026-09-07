@@ -1,0 +1,101 @@
+# ---------------------------------------------------------------------------
+#.gitignore — serviço Go + Docker/Compose + observabilidade + Ansible
+# Regra: segredos e artefatos gerados nunca entram no repositório.
+# ---------------------------------------------------------------------------
+
+# --- Go: binários e artefatos de build/teste -------------------------------
+/bin/
+/dist/
+/build/
+/http-server-projeto-korp
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+coverage.html
+cover.out
+cover.html
+*.prof
+*.pprof
+cpu.out
+mem.out
+bench-*.txt
+go.work
+go.work.sum
+# vendor/ fica versionado só se ADR decidir vendoring; por padrão não versionar
+/vendor/
+
+# --- Configuração e segredos ----------------------------
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+*.secret
+*.secrets.y*ml
+# Ansible Vault: senha nunca no repo (arquivos cifrados.vault.yml PODEM ser versionados)
+.vault_pass
+.vault_pass.txt
+ansible/.vault_pass*
+
+# --- Docker / Compose -------------------------------------------------------
+*.tar
+*.tar.gz
+docker-compose.override.yml
+compose.override.yml
+# dados persistidos de Prometheus/Grafana/Alertmanager/Tempo/Loki em execução local
+/data/
+/observability/**/data/
+/observability/prometheus/wal/
+/observability/grafana/grafana.db
+
+# --- Ansible ----------------------------------------------------------------
+*.retry
+/ansible/.cache/
+/ansible/collections/
+/ansible/roles/external/
+/.ansible/
+
+# --- Framework de desenvolvimento local ------------------
+#.agents/ (conhecimento, gates, memória),.claude/ (hooks, subagentes, skills), scripts/ (runner de
+# gates) e CLAUDE.md são ferramental de engenharia assistida; o repositório público contém só o produto.
+# O gate continua obrigatório antes de commitar — ele só não é versionado.
+.agents/
+.claude/
+scripts/
+CLAUDE.md
+
+# --- Saídas de gates / relatórios locais ------------------------------------
+sbom*.json
+sbom*.spdx*
+trivy-*.json
+gosec-*.json
+k6-*.json
+k6-*.html
+
+# --- Claude Code / editores / SO --------------------------------------------
+.claude/settings.local.json
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Python (hooks)
+__pycache__/
+*.pyc
+
+# artefato de runtime do interruptor do perfil estendido da demo: a role monitoring renomeia
+# scrape_full.yml quando o perfil `full` esta desligado
+observability/prometheus/scrape_full.yml.disabled

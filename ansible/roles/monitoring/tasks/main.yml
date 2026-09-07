@@ -1,0 +1,302 @@
+# roles/monitoring/tasks/main.yml — componentes de monitoramento e a chave da demo em dois
+# atos.
+#
+# O que esta role faz, em ordem:
+#   1. confere a configuração versionada que o perfil ATIVO realmente consome;
+#   2. liga/desliga o `scrape_full.yml` conforme `compose_profiles` (o ponto que decide se o /targets
+#      abre verde ou vermelho na frente do avaliador) e recarrega o Prometheus a quente;
+#   3. valida prometheus.yml, TODAS as regras e roda os testes unitários das regras com promtool;
+#   4. confere que os containers do perfil ativo estão de pé e prontos.
+#
+# POR QUE o `scrape_full.yml` precisa de interruptor: `prometheus.yml` carrega o glob
+# `scrape_config_files: [scrape_*.yml]`. No perfil padrão os 10 containers do perfil `full` não existem; se o
+# arquivo estivesse no diretório, o Prometheus abriria com ~11 alvos DOWN — ruído que não distingue
+# "ainda não subiu" de "quebrado". Verificado em 2026-09-06 com `promtool check config` (v2.55.1):
+# um glob que não casa nenhum arquivo NÃO é erro, então o perfil padrão é válido sem o arquivo.
+#
+# POR QUE renomear para `.disabled` em vez de apagar: o arquivo é VERSIONADO no repositório e é a
+# fonte de verdade dos 12 jobs do perfil `full`. Apagá-lo no perfil padrão destruiria conteúdo rastreado e
+# deixaria a árvore suja; o sufixo `.disabled` não casa `scrape_*.yml`, então o efeito para o
+# Prometheus é exatamente o mesmo de "não copiado", e a volta ao perfil estendido é reversível e idempotente.
+---
+# =====================================================================================
+# 1. Configuração versionada exigida pelo perfil ATIVO
+# =====================================================================================
+
+- name: Verificar a configuração de monitoramento exigida pelo perfil padrão
+  ansible.builtin.stat:
+    path: "{{ project_root }}/{{ item }}"
+  loop: "{{ monitoring_required_files }}"
+  register: monitoring_required_stat
+
+- name: Falhar se faltar configuração de monitoramento do perfil padrão
+  ansible.builtin.assert:
+    that: item.stat.exists
+    fail_msg: "{{ item.item }} ausente em {{ project_root }}"
+  loop: "{{ monitoring_required_stat.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Verificar a configuração consumida apenas pelo perfil full
+  ansible.builtin.stat:
+    path: "{{ project_root }}/{{ item }}"
+  loop: "{{ monitoring_required_files_full }}"
+  register: monitoring_required_full_stat
+  when: monitoring_profile_full | bool
+
+- name: Falhar se faltar configuração do perfil full
+  # Sem o arquivo, o bind mount do compose cria um DIRETÓRIO vazio no lugar e o container morre com
+  # "is a directory" — erro que não parece falta de arquivo. Melhor falhar aqui, com o nome do arquivo.
+  ansible.builtin.assert:
+    that: item.stat.exists
+    fail_msg: "{{ item.item }} ausente — exigido pelo perfil full"
+  loop: "{{ monitoring_required_full_stat.results | default }}"
+  loop_control:
+    label: "{{ item.item }}"
+  when: monitoring_profile_full | bool
+
+- name: Listar as regras de alerta versionadas (rules/*.rules.yml)
+  ansible.builtin.find:
+    paths: "{{ monitoring_prometheus_dir }}/rules"
+    patterns: "*.rules.yml"
+    file_type: file
+  register: monitoring_rule_files
+
+- name: Exigir ao menos um arquivo de regras
+  ansible.builtin.assert:
+    that: monitoring_rule_files.matched | int > 0
+    fail_msg: "nenhum rules/*.rules.yml em {{ monitoring_prometheus_dir }}/rules"
+    success_msg: "{{ monitoring_rule_files.matched }} arquivo(s) de regra encontrado(s)"
+
+- name: Listar os testes unitários das regras (rules/tests/*.test.yml)
+  ansible.builtin.find:
+    paths: "{{ monitoring_prometheus_dir }}/rules/tests"
+    patterns: "*.test.yml"
+    file_type: file
+  register: monitoring_rule_tests
+
+# =====================================================================================
+# 2. Interruptor do perfil `full` no scrape do Prometheus
+# =====================================================================================
+
+- name: Verificar o estado atual do scrape do perfil full
+  ansible.builtin.stat:
+    path: "{{ item }}"
+  loop:
+    - "{{ monitoring_scrape_full }}"
+    - "{{ monitoring_scrape_full_disabled }}"
+  register: monitoring_scrape_stat
+  loop_control:
+    label: "{{ item | basename }}"
+
+- name: Consolidar o estado do scrape do perfil full
+  ansible.builtin.set_fact:
+    monitoring_scrape_active: "{{ monitoring_scrape_stat.results[0].stat.exists }}"
+    monitoring_scrape_parked: "{{ monitoring_scrape_stat.results[1].stat.exists }}"
+
+- name: Reativar o scrape do perfil full (perfil estendido)
+  ansible.builtin.copy:
+    src: "{{ monitoring_scrape_full_disabled }}"
+    dest: "{{ monitoring_scrape_full }}"
+    remote_src: true
+    mode: "0644"
+  when:
+    - monitoring_profile_full | bool
+    - monitoring_scrape_parked | bool
+    - not (monitoring_scrape_active | bool)
+  notify: Recarregar a configuração do Prometheus
+
+- name: Remover o arquivo parado após reativar o scrape do perfil full
+  ansible.builtin.file:
+    path: "{{ monitoring_scrape_full_disabled }}"
+    state: absent
+  when: monitoring_profile_full | bool
+
+- name: Preservar o scrape do perfil full antes de desativá-lo (perfil padrão)
+  ansible.builtin.copy:
+    src: "{{ monitoring_scrape_full }}"
+    dest: "{{ monitoring_scrape_full_disabled }}"
+    remote_src: true
+    mode: "0644"
+  when:
+    - not (monitoring_profile_full | bool)
+    - monitoring_scrape_active | bool
+
+- name: Garantir que o scrape do perfil full NÃO está no diretório do Prometheus (perfil padrão)
+  # É esta task que mantém o /targets do perfil padrão com 2 alvos UP e ZERO alvo vermelho.
+  ansible.builtin.file:
+    path: "{{ monitoring_scrape_full }}"
+    state: absent
+  when: not (monitoring_profile_full | bool)
+  notify: Recarregar a configuração do Prometheus
+
+- name: Confirmar que o scrape do perfil full está no lugar (perfil estendido)
+  ansible.builtin.stat:
+    path: "{{ monitoring_scrape_full }}"
+  register: monitoring_scrape_final
+  when: monitoring_profile_full | bool
+
+- name: Falhar se o perfil full foi pedido e o scrape_full.yml não existe
+  ansible.builtin.assert:
+    that: monitoring_scrape_final.stat.exists
+    fail_msg: >-
+      compose_profiles inclui 'full' mas não há {{ monitoring_scrape_full }} nem
+      {{ monitoring_scrape_full_disabled }} — sem esse arquivo o Prometheus não raspa nenhum dos 12
+      jobs do stack estendido
+  when: monitoring_profile_full | bool
+
+# =====================================================================================
+# 3. Validação da configuração com promtool (imagem oficial, nada instalado no alvo)
+# =====================================================================================
+
+- name: Validar o prometheus.yml com promtool (imagem oficial)
+  # O diretório inteiro é montado em /etc/prometheus para que `rule_files: rules/*.rules.yml` e
+  # `scrape_config_files: scrape_*.yml` — ambos RELATIVOS ao config — resolvam como dentro do container.
+  ansible.builtin.command: >
+    docker run --rm --entrypoint promtool
+    -v {{ monitoring_prometheus_dir }}:/etc/prometheus:ro
+    {{ monitoring_promtool_image }} check config /etc/prometheus/prometheus.yml
+  changed_when: false
+
+- name: Validar TODAS as regras com promtool
+  # Lista vinda do `find`: uma única invocação cobre service/container/external/platform e qualquer
+  # arquivo novo, sem depender de glob de shell nem de uma lista fixa que envelhece em silêncio.
+  ansible.builtin.command: >
+    docker run --rm --entrypoint promtool
+    -v {{ monitoring_prometheus_dir }}:/etc/prometheus:ro
+    {{ monitoring_promtool_image }} check rules {{ monitoring_rule_paths | join(' ') }}
+  vars:
+    monitoring_rule_paths: >-
+      {{ monitoring_rule_files.files | map(attribute='path') | sort
+         | map('regex_replace', '^' ~ monitoring_prometheus_dir, '/etc/prometheus') | list }}
+  changed_when: false
+
+- name: Executar os testes unitários das regras (promtool test rules)
+  # `rule_files:` de cada .test.yml é resolvido RELATIVO ao arquivo de teste (verificado em 2026-09-06
+  # com prom/prometheus:v2.55.1 e caminho absoluto), então montar o diretório basta.
+  ansible.builtin.command: >
+    docker run --rm --entrypoint promtool
+    -v {{ monitoring_prometheus_dir }}:/etc/prometheus:ro
+    {{ monitoring_promtool_image }} test rules {{ monitoring_test_paths | join(' ') }}
+  vars:
+    monitoring_test_paths: >-
+      {{ monitoring_rule_tests.files | map(attribute='path') | sort
+         | map('regex_replace', '^' ~ monitoring_prometheus_dir, '/etc/prometheus') | list }}
+  changed_when: false
+  when: monitoring_rule_tests.matched | int > 0
+
+# =====================================================================================
+# 4. Containers do perfil ativo em execução e prontos
+# =====================================================================================
+
+- name: Garantir que os containers do perfil ativo estão em execução
+  community.docker.docker_container_info:
+    name: "{{ item }}"
+  loop: "{{ monitoring_containers_expected }}"
+  register: monitoring_containers
+
+- name: Falhar se algum container do perfil ativo não está rodando
+  ansible.builtin.assert:
+    that:
+      - item.exists
+      - item.container.State.Running
+    fail_msg: >-
+      container {{ item.item }} não está em execução — no perfil
+      {{ (monitoring_profile_full | bool) | ternary('full', 'padrão') }} ele é obrigatório
+      (suba com `docker compose {{ (monitoring_profile_full | bool) | ternary('--profile full ', '') }}up -d`)
+  loop: "{{ monitoring_containers.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Confirmar que o diretório de configuração do Prometheus está montado no container
+  # Sem um mount que cubra /etc/prometheus (e não só /etc/prometheus/prometheus.yml), o interruptor
+  # do passo 2 não tem efeito nenhum: o scrape_full.yml existe no host e é invisível no container.
+  ansible.builtin.assert:
+    that:
+      - monitoring_prometheus_mounts | select('match', '^/etc/prometheus$') | list | length > 0
+    fail_msg: >-
+      o container prometheus não monta o DIRETÓRIO /etc/prometheus (mounts atuais:
+      {{ monitoring_prometheus_mounts | join(', ') }}). Troque as duas linhas de volume do serviço
+      prometheus no compose.yml por `- ./observability/prometheus:/etc/prometheus:ro`, senão o
+      scrape_full.yml do perfil full nunca chega ao Prometheus.
+  vars:
+    monitoring_prometheus_mounts: >-
+      {{ (monitoring_containers.results | selectattr('item', 'equalto', 'prometheus') | first)
+         .container.Mounts | map(attribute='Destination') | list }}
+  when: monitoring_profile_full | bool
+
+- name: Aplicar o reload do Prometheus antes de conferir a prontidão
+  # Sem o flush os handlers só rodariam no fim da play — depois da role validate, que já teria
+  # consultado um Prometheus com a configuração antiga.
+  ansible.builtin.meta: flush_handlers
+
+- name: Aguardar o Prometheus ficar pronto
+  ansible.builtin.uri:
+    url: "{{ monitoring_prometheus_url }}/-/ready"
+    status_code: 200
+  register: monitoring_prom_ready
+  retries: 10
+  delay: 3
+  until: monitoring_prom_ready.status == 200
+
+- name: Aguardar o Grafana ficar pronto
+  ansible.builtin.uri:
+    url: "{{ monitoring_grafana_url }}/api/health"
+    status_code: 200
+  register: monitoring_grafana_ready
+  retries: 10
+  delay: 3
+  until: monitoring_grafana_ready.status == 200
+
+- name: Confirmar que o Prometheus está coletando o serviço (target UP)
+  ansible.builtin.uri:
+    url: "{{ monitoring_prometheus_url }}/api/v1/targets"
+    return_content: true
+  register: monitoring_prom_targets
+  retries: 6
+  delay: 5
+  until: >-
+    monitoring_prom_targets.json.data.activeTargets
+    | selectattr('labels.job', 'equalto', 'http-server-projeto-korp')
+    | selectattr('health', 'equalto', 'up') | list | length > 0
+
+- name: Aguardar Tempo e Loki ficarem prontos (healthcheck do compose = /ready)
+  # tempo:3200/ready e loki:3100/ready só existem DENTRO da korp-net (os dois só têm `expose:`), por
+  # isso a prontidão é lida pelo healthcheck do próprio container em vez de um uri do host.
+  community.docker.docker_container_info:
+    name: "{{ item }}"
+  loop: "{{ monitoring_ready_containers_full }}"
+  register: monitoring_full_health
+  retries: "{{ monitoring_ready_retries }}"
+  delay: "{{ monitoring_ready_delay }}"
+  until: >-
+    monitoring_full_health.exists | default(false)
+    and (monitoring_full_health.container.State.Health.Status | default('sem healthcheck')) == 'healthy'
+  when: monitoring_profile_full | bool
+
+- name: Aguardar Tempo, Loki e Pyroscope aparecerem UP no Prometheus (perfil full)
+  # Dupla função: prova a prontidão do Pyroscope (sem healthcheck possível — a imagem 1.8.0 não tem
+  # shell) e prova que o scrape_full.yml foi carregado de fato pelo reload.
+  ansible.builtin.uri:
+    url: "{{ monitoring_prometheus_url }}/api/v1/targets?state=active"
+    return_content: true
+  register: monitoring_full_targets
+  retries: "{{ monitoring_ready_retries }}"
+  delay: "{{ monitoring_ready_delay }}"
+  until: >-
+    monitoring_full_targets.json.data.activeTargets
+    | selectattr('labels.job', 'in', monitoring_ready_jobs_full)
+    | selectattr('health', 'equalto', 'up') | list | length >= (monitoring_ready_jobs_full | length)
+  when: monitoring_profile_full | bool
+
+- name: Resumo do monitoramento provisionado
+  ansible.builtin.debug:
+    msg:
+      - "perfil: {{ (monitoring_profile_full | bool) | ternary('full (perfil estendido,)', 'padrão (perfil padrão, brief)') }}"
+      - "containers verificados: {{ monitoring_containers_expected | join(', ') }}"
+      - "regras validadas: {{ monitoring_rule_names | join(', ') }}"
+      - "testes de regra executados: {{ monitoring_rule_tests.matched }}"
+      - "scrape do perfil full: {{ (monitoring_profile_full | bool) | ternary('ATIVO', 'desativado') }}"
+  vars:
+    monitoring_rule_names: >-
+      {{ monitoring_rule_files.files | map(attribute='path') | map('basename') | sort | list }}

@@ -1,0 +1,73 @@
+# roles/docker/tasks/main.yml — instala o Docker Engine pelo repositório oficial, de forma idempotente
+# (/;)
+---
+- name: Instalar pré-requisitos do repositório apt
+  ansible.builtin.apt:
+    name: [ca-certificates, curl, gnupg, python3-pip]
+    state: present
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Garantir diretório de keyrings
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: "0755"
+
+- name: Baixar a chave GPG oficial do Docker
+  ansible.builtin.get_url:
+    url: https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}/gpg
+    dest: "{{ docker_apt_keyring }}"
+    mode: "0644"
+
+- name: Registrar o repositório apt do Docker (deb822)
+  ansible.builtin.deb822_repository:
+    name: docker
+    types: [deb]
+    uris: "https://download.docker.com/linux/{{ ansible_facts['distribution'] | lower }}"
+    suites: ["{{ ansible_facts['distribution_release'] }}"]
+    components: [stable]
+    architectures: ["{{ 'amd64' if ansible_facts['architecture'] == 'x86_64' else 'arm64' }}"]
+    signed_by: "{{ docker_apt_keyring }}"
+    state: present
+  notify: Update apt cache
+
+- name: Aplicar handlers pendentes (apt update) antes de instalar
+  ansible.builtin.meta: flush_handlers
+
+- name: Instalar Docker Engine, CLI, containerd e plugins (buildx, compose)
+  ansible.builtin.apt:
+    name: "{{ docker_apt_packages }}"
+    state: present
+    update_cache: true
+
+- name: Habilitar e iniciar o serviço docker
+  ansible.builtin.service:
+    name: docker
+    state: started
+    enabled: true
+
+- name: Adicionar usuários ao grupo docker (relogin necessário para o efeito na sessão)
+  ansible.builtin.user:
+    name: "{{ item }}"
+    groups: docker
+    append: true
+  loop: "{{ docker_users }}"
+  when: item is defined and item | length > 0
+
+- name: Instalar o SDK Python do Docker (community.docker)
+  ansible.builtin.pip:
+    name:
+      - docker>=7.0
+    state: present
+    extra_args: --break-system-packages
+  when: ansible_facts['distribution_version'] is version('23.04', '>=') or ansible_facts['os_family'] == 'Debian'
+
+- name: Verificar a versão instalada
+  ansible.builtin.command: docker version --format '{{ "{{" }}.Server.Version{{ "}}" }}'
+  register: docker_version
+  changed_when: false
+
+- name: Exibir a versão do Docker
+  ansible.builtin.debug:
+    msg: "Docker Engine {{ docker_version.stdout }}"

@@ -1,0 +1,134 @@
+# slo/http-server-projeto-korp.slo.yaml — SLO do serviço.
+# Derivados: recording rules e alertas em observability/prometheus/rules/service.rules.yml (interno) e
+# observability/prometheus/rules/external.rules.yml (externo); dashboard slo-overview.
+#
+# =================================================================================================
+# POR QUE EXISTEM DOIS SLOs DE DISPONIBILIDADE (acrescentado em 2026-09-06 por)
+# =================================================================================================
+# `availability` (INTERNO) mede o PROCESSO: razão de respostas sem 5xx em http_requests_total, coletado
+#   pelo Prometheus DIRETO na korp-net, na porta 8080 do app. Responde "o serviço está processando bem
+#   as requisições que CHEGAM até ele?".
+# `availability_external` (EXTERNO) mede o CAMINHO DO USUÁRIO: probe_success do blackbox-exporter
+#   sondando http://nginx/projeto-korp, ATRAVÉS do proxy reverso, com verificação do corpo.
+#   Responde "um cliente consegue ser atendido, agora, pelo caminho real de /?".
+#
+# RELAÇÃO ENTRE OS DOIS — e por que um não substitui o outro:
+#   * O externo é SUPERCONJUNTO do interno em cobertura de falhas: acrescenta NGINX (container morto,
+#     proxy_pass errado, conf recarregada inválida, location removida), rede korp-net, DNS do compose,
+#     saturação de conexão na borda e violação de contrato (HTTP 200 com corpo errado).
+#   * O interno é mais SENSÍVEL por evento: mede TODAS as requisições reais (uma a uma), enquanto o
+#     externo mede 4 sondas/min. Erro em 0,5 % do tráfego aparece no interno e pode passar despercebido
+#     pelo externo; NGINX fora aparece no externo e é INVISÍVEL para o interno.
+#   * É perfeitamente possível o INTERNO estar em 100 % e o EXTERNO em 0 %: app são, `up`=1,
+#     `service_up`=1, zero 5xx — e o usuário recebendo connection refused porque o NGINX caiu. Esse é
+#     exatamente o ponto cego que motivou o, e o alerta UserPathUnavailable existe para ele.
+#   * O inverso também ocorre e é informativo: interno queimando com externo estável significa erro em
+#     rota que a sonda não cobre — a sonda vê só /projeto-korp e /healthz.
+#   * Os dois consomem orçamentos SEPARADOS. Não somar, não fazer média: são perguntas diferentes com
+#     ações diferentes. Na dúvida sobre "estamos entregando?", vence o EXTERNO — é o que o usuário sente.
+#     Na dúvida sobre "o que quebrou?", a comparação entre as duas curvas é o primeiro passo da triagem
+#     (ver ALERT_RUNBOOKS.md#serviceexternalavailabilityburn).
+#   * Mesmo objetivo (99,9 %/30 d) e mesmos fatores de burn (14.4/6/1) de propósito: os fatores são
+#     contrato entre error budget e interrupção humana e não mudam por SLI.
+# =================================================================================================
+service: http-server-projeto-korp
+owner: sre            # a definir pelo Humano (time/pessoa responsável)
+description: Serviço HTTP do Desafio Korp — GET /projeto-korp atrás do NGINX.
+
+sli:
+  - name: availability
+    type: availability
+    description: Fração de requisições sem 5xx.
+    good_query: sum(rate(http_requests_total{service="http-server-projeto-korp",code!~"5.."}[5m]))
+    total_query: sum(rate(http_requests_total{service="http-server-projeto-korp"}[5m]))
+    recording_rule: service:sli_availability:ratio_rate
+  - name: latency
+    type: latency
+    description: Fração de requisições respondidas em menos de 300 ms.
+    threshold_seconds: 0.3
+    good_query: sum(rate(http_request_duration_seconds_bucket{service="http-server-projeto-korp",le="0.3"}[5m]))
+    total_query: sum(rate(http_request_duration_seconds_count{service="http-server-projeto-korp"}[5m]))
+    recording_rule: service:sli_latency_good:ratio_rate
+  # --- SLI EXTERNO: o caminho do usuário, através do NGINX ---
+  # Gauge 0/1 por sonda: avg_over_time(probe_success[janela]) JÁ É a razão bom/total da janela — não há
+  # divisão a proteger com clamp_min, por isso a família se chama :ratio_avg<w> e não :ratio_rate<w>.
+  # Só a sonda `contrato` entra no SLI: ela exige HTTP 200 + Content-Type JSON + corpo com
+  # "nome":"Projeto Korp". A sonda `liveness` (/healthz) fica de fora do orçamento —
+  # é diagnóstico, não promessa ao usuário.
+  - name: availability_external
+    type: availability
+    description: >-
+      Fração de sondas do blackbox bem-sucedidas em http://nginx/projeto-korp — disponibilidade e
+      contrato vistos DE FORA, atravessando o proxy reverso.
+    ratio_query: avg by (service) (avg_over_time(probe_success{job="blackbox-http",probe="contrato"}[5m]))
+    recording_rule: service:sli_availability_external:ratio_avg
+    burn_rate_rule: slo:external_availability:burn_rate
+    objective: 0.999          # mesmo objetivo do SLI interno; orçamento SEPARADO (ver cabeçalho)
+    window: 30d
+    error_budget_minutes: 43.2
+    source:
+      job: blackbox-http
+      probe_module: korp_contract       # observability/blackbox/blackbox.yml
+      target: http://nginx/projeto-korp #  C3: nome DNS na korp-net, nunca localhost
+      probe_interval: 15s               # 4 sondas/min = 20 em 5 min, 240 em 1 h
+      profile: full                     # blackbox-exporter vive em profiles:[full]
+    notes: >-
+      Granularidade: com 20 amostras em 5 min, UMA sonda falha já dá 5 % de erro na janela curta
+      (burn 50x). O page só ocorre porque a janela longa de 1 h também precisa passar de 1,44 %
+      (~4 sondas falhas na hora) — o par multiwindow é o que impede page por blip isolado. Se surgir
+      ruído recorrente sem impacto, ajustar o intervalo da sonda, nunca o `for`.
+      Sonda com probe_duration_seconds próximo do timeout de 5 s do módulo conta como INDISPONIBILIDADE:
+      neste SLI, lentidão extrema e queda são o mesmo evento.
+
+objective: 0.999
+window: 30d
+error_budget_minutes: 43.2
+
+error_budget_policy:
+  - remaining_above: 0.5
+    action: fluxo normal de features
+  - remaining_between: [0.2, 0.5]
+    action: mudanças arriscadas só com plano de rollback e observação pós-deploy
+  - remaining_below: 0.2
+    action: congelar features; priorizar confiabilidade; postmortem dos maiores consumidores
+  - remaining_below: 0.0
+    action: freeze total até recuperar >= 10%; revisar o SLO se persistente
+
+alerting:
+  burn_rate_windows:
+    - long: 1h
+      short: 5m
+      factor: 14.4
+      severity: critical
+    - long: 6h
+      short: 30m
+      factor: 6
+      severity: critical
+    - long: 3d
+      short: 6h
+      factor: 1
+      severity: warning
+  alerts:
+    - ServiceHighErrorRateBurn          # SLI interno: availability
+    - ServiceHighLatencyBurn            # SLI interno: latency
+    - ServiceExternalAvailabilityBurn   # SLI externo: availability_external (external.rules.yml)
+  # Alertas que protegem o SLI externo sem serem burn-rate: sintomas binários e imediatos do caminho do
+  # usuário. Ficam listados aqui para que renomear qualquer um deles obrigue a atualizar este arquivo
+  #.
+  related_alerts:
+    - UserPathUnavailable               # app são + borda fora: interno 100 %, externo 0 %
+    - ServiceContractViolated           # HTTP 200 com corpo fora do invisível para SLI de 5xx
+  runbooks: https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md
+
+dashboard:
+  uid: slo-overview
+  related: [http-server-projeto-korp]
+  # slo-overview mostra as DUAS curvas de disponibilidade (interna e externa) no mesmo eixo: a distância
+  # entre elas é o diagnóstico de borda vs app, e é o primeiro painel a abrir num incidente.
+
+review:
+  cadence: trimestral e a cada postmortem
+  last_review: 2026-09-06
+  last_change: >-
+    2026-09-06 — acrescentado o SLI availability_external. Objetivo, janela e fatores de burn
+    inalterados para os SLIs existentes.

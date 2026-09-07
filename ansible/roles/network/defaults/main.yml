@@ -1,0 +1,6 @@
+# roles/network/defaults/main.yml — variáveis da role network.
+# O nome tem de ser o MESMO declarado em `networks.korp-net.name` do compose.yml: é isso que faz a rede
+# criada aqui e a usada pelo compose serem a mesma, e torna os dois caminhos idempotentes entre si.
+---
+network_name: korp-net
+network_driver: bridge

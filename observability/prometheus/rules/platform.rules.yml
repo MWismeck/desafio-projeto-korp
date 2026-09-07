@@ -1,0 +1,136 @@
+# observability/prometheus/rules/platform.rules.yml — BORDA, SATURAÇÃO, AUTO-MONITORAMENTO E HOST.
+# Criado em 2026-09-06.
+#
+# Três famílias, todas de CAUSA que ANTECEDE o sintoma com ação clara:
+#   1. borda/saturação: NGINX derrubando conexão, descritores de arquivo acabando;
+#   2. auto-monitoramento: quem observa também falha — config não recarregada, regra que não avalia,
+#      notificação que não sai, span que não chega no Tempo. Sem isso a stack fica "verde por cegueira";
+#   3. host: disco previsto para acabar (predict_linear), a falha mais previsível que existe.
+#
+# Alvos: só o job `prometheus` existe no perfil PADRÃO. Todos os demais (nginx-exporter, node,
+# alertmanager, otel-collector) vivem no perfil `full` e são declarados em `../scrape_full.yml`,
+# arquivo que a role do Ansible só copia quando `compose_profiles` inclui `full`.
+# No perfil padrão da demo as séries simplesmente não existem e estes alertas ficam calados — é o desenho.
+# Testes: tests/platform.test.yml — promtool test rules.
+groups:
+  - name: korp.platform.recording
+    rules:
+      # --- NGINX: conexões ACEITAS menos ATENDIDAS = conexões descartadas por segundo ---
+      # (worker_connections/limite de fd estourado; o cliente vê connection reset, não 5xx)
+      - record: instance:nginx_connections_dropped:rate5m
+        expr: |
+          rate(nginx_connections_accepted{job="nginx"}[5m])
+          -
+          rate(nginx_connections_handled{job="nginx"}[5m])
+
+      # --- descritores de arquivo: vale para QUALQUER alvo com o process collector ---
+      - record: instance:process_open_fds:ratio
+        expr: process_open_fds / clamp_min(process_max_fds, 1)
+
+      # --- auto-monitoramento ---
+      - record: instance:prometheus_rule_evaluation_failures:rate5m
+        expr: sum by (job, service, instance, rule_group) (rate(prometheus_rule_evaluation_failures_total[5m]))
+
+      - record: instance:alertmanager_notifications_failed:rate5m
+        expr: sum by (job, service, instance, integration) (rate(alertmanager_notifications_failed_total[5m]))
+
+      # o nome mudou de `..._spans` para `..._spans_total` entre versões do collector: a regex cobre as duas
+
+      # --- host: previsão de espaço livre daqui a 4 h, a partir da tendência das últimas 6 h ---
+      - record: mountpoint:node_filesystem_avail_bytes:predict_linear4h
+        expr: predict_linear(node_filesystem_avail_bytes{job="node"}[6h], 4 * 3600)
+      - record: mountpoint:node_filesystem_avail:ratio
+        expr: node_filesystem_avail_bytes{job="node"} / clamp_min(node_filesystem_size_bytes{job="node"}, 1)
+
+  - name: korp.platform.alerts
+    rules:
+      # ---------- Borda / saturação ----------
+      - alert: NginxConnectionsSaturated
+        expr: instance:nginx_connections_dropped:rate5m > 0
+        for: 5m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "{{ $labels.service }} está descartando conexões TCP na borda"
+          description: "accepted - handled = {{ printf \"%.2f\" $value }} conexões/s descartadas em 5 min (limite 0). O usuário vê connection reset, não 5xx — e nenhum SLI de 5xx registra isso. Subir worker_connections/limites de fd do NGINX."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#nginxconnectionssaturated"
+          dashboard_url: "http://localhost:3000/d/korp-edge"
+
+      - alert: ProcessFileDescriptorsNearLimit
+        expr: instance:process_open_fds:ratio > 0.8
+        for: 10m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "{{ $labels.service }} perto do limite de descritores de arquivo"
+          description: "process_open_fds/process_max_fds = {{ printf \"%.2f\" $value }} há 10 min em {{ $labels.instance }} (limite 0.8). Ao chegar a 1 o processo para de aceitar conexão: vazamento de socket/arquivo ou LimitNOFILE baixo."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#processfiledescriptorsnearlimit"
+          dashboard_url: "http://localhost:3000/d/korp-container-health"
+
+      # ---------- Auto-monitoramento (quem observa também quebra) ----------
+      # gauge cru, mesma exceção de `up`/`service_up`: não há o que agregar.
+      - alert: PrometheusConfigReloadFailed
+        expr: prometheus_config_last_reload_successful == 0
+        for: 5m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "{{ $labels.service }} está rodando com uma configuração ANTIGA"
+          description: "prometheus_config_last_reload_successful == 0 há 5 min: o último reload falhou e o processo segue com o config anterior. Jobs/regras novos NÃO estão valendo. `docker logs prometheus` e `promtool check config`."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#prometheusconfigreloadfailed"
+          dashboard_url: "http://localhost:3000/d/http-server-projeto-korp"
+
+      - alert: PrometheusRuleEvaluationFailing
+        expr: instance:prometheus_rule_evaluation_failures:rate5m > 0
+        for: 10m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "{{ $labels.service }} não consegue avaliar o grupo de regras {{ $labels.rule_group }}"
+          description: "prometheus_rule_evaluation_failures_total sobe a {{ printf \"%.4f\" $value }}/s há 10 min: recording rules paradas = SLI e burn-rate CONGELADOS, alerta que não dispara. Ver /rules (health != ok)."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#prometheusruleevaluationfailing"
+          dashboard_url: "http://localhost:3000/d/http-server-projeto-korp"
+
+      - alert: AlertmanagerNotificationsFailing
+        expr: instance:alertmanager_notifications_failed:rate5m > 0
+        for: 10m
+        labels:
+          severity: critical
+          team: sre
+        annotations:
+          summary: "{{ $labels.service }} não entrega notificação pela integração {{ $labels.integration }}"
+          description: "alertmanager_notifications_failed_total sobe a {{ printf \"%.4f\" $value }}/s há 10 min: o alerta dispara e NINGUÉM é avisado. Conferir o receiver e a URL do webhook."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#alertmanagernotificationsfailing"
+          dashboard_url: "http://localhost:3000/d/http-server-projeto-korp"
+
+      - alert: PrometheusHeadSeriesHigh
+        expr: prometheus_tsdb_head_series > 100000
+        for: 30m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "{{ $labels.service }} acima do orçamento de cardinalidade"
+          description: "prometheus_tsdb_head_series = {{ printf \"%.0f\" $value }} (orçamento 100000,). Triagem: topk(10, count by (__name__)({__name__=~\".+\"})). Corrigir na origem; metric_relabel_configs é curativo."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#prometheusheadserieshigh"
+          dashboard_url: "http://localhost:3000/d/http-server-projeto-korp"
+
+      # ---------- Host ----------
+      - alert: HostDiskWillFill
+        expr: |
+          mountpoint:node_filesystem_avail_bytes:predict_linear4h < 0
+          and on (instance, device, mountpoint)
+          mountpoint:node_filesystem_avail:ratio < 0.3
+        for: 30m
+        labels:
+          severity: warning
+          team: sre
+        annotations:
+          summary: "{{ $labels.service }}: disco de {{ $labels.mountpoint }} acaba em menos de 4 h"
+          description: "Pela tendência das últimas 6 h, node_filesystem_avail_bytes chega a zero em menos de 4 h em {{ $labels.instance }} ({{ $labels.device }}), com menos de 30 % livre agora. Disco cheio para o TSDB, o log do Docker e o próprio serviço. Ação: podar imagem/volume, rotacionar log, revisar retention.size."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#hostdiskwillfill"
+          dashboard_url: "http://localhost:3000/d/korp-container-health"

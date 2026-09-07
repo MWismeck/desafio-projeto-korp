@@ -1,0 +1,74 @@
+# roles/app/tasks/main.yml — build da imagem e docker compose up. Idempotente:
+# docker_image só reconstrói quando os fontes mudam (checksum), docker_compose_v2 mantém state=present.
+---
+- name: Verificar que o repositório tem Dockerfile e compose.yml
+  ansible.builtin.stat:
+    path: "{{ project_root }}/{{ item }}"
+  loop: [Dockerfile, compose.yml, go.mod]
+  register: app_files
+
+- name: Falhar cedo se faltar arquivo essencial
+  ansible.builtin.assert:
+    that: item.stat.exists
+    fail_msg: "{{ item.item }} não encontrado em {{ project_root }}"
+  loop: "{{ app_files.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+- name: Calcular checksum dos fontes Go (decide se a imagem precisa ser reconstruída)
+  ansible.builtin.find:
+    paths: "{{ project_root }}"
+    patterns: ["*.go", "go.mod", "go.sum", "Dockerfile"]
+    recurse: true
+    excludes: [".git", "vendor", ".agents"]
+  register: app_sources
+
+- name: Consolidar checksum dos fontes
+  ansible.builtin.set_fact:
+    app_sources_hash: >-
+      {{ app_sources.files | map(attribute='path') | sort
+         | map('ansible.builtin.hash', 'sha1') | join | hash('sha1') }}
+
+- name: Construir a imagem http-server-projeto-korp
+  community.docker.docker_image:
+    name: "{{ app_name }}"
+    tag: "{{ app_version }}"
+    source: build
+    build:
+      path: "{{ project_root }}"
+      dockerfile: Dockerfile
+      args:
+        VERSION: "{{ app_version }}"
+        COMMIT: "{{ app_commit }}"
+      pull: false
+    # force_source: reconstrói só quando o checksum registrado difere do anterior (idempotência controlada)
+    force_source: >-
+      {{ app_sources_hash != (lookup('ansible.builtin.file',
+         project_root ~ '/.ansible/sources-hash',
+         errors='ignore') | default('')) }}
+    state: present
+  check_mode: false
+
+- name: Registrar o checksum dos fontes usados no build
+  ansible.builtin.copy:
+    content: "{{ app_sources_hash }}"
+    dest: "{{ project_root }}/.ansible/sources-hash"
+    mode: "0644"
+
+- name: Subir os containers com docker compose (perfil ativo em compose_profiles)
+  community.docker.docker_compose_v2:
+    project_src: "{{ project_root }}"
+    files: [compose.yml]
+    profiles: "{{ compose_profiles }}"
+    state: present
+    wait: true
+    wait_timeout: 120
+    build: never
+  environment:
+    VERSION: "{{ app_version }}"
+    COMMIT: "{{ app_commit }}"
+  register: app_compose_up
+
+- name: Exibir containers gerenciados pelo compose
+  ansible.builtin.debug:
+    msg: "{{ app_compose_up.containers | default | map(attribute='Name') | list }}"

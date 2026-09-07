@@ -1,0 +1,81 @@
+#.golangci.yml — configuração v2 (golangci-lint >= 2.0). Gate:.
+version: "2"
+
+run:
+  timeout: 5m
+  tests: true
+  modules-download-mode: readonly
+
+linters:
+  default: none
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - ineffassign
+    - unused
+    - gosec
+    - gocritic
+    - revive
+    - errorlint
+    - contextcheck
+    - bodyclose
+    - noctx
+    - prealloc
+    - misspell
+    - unparam
+    - forbidigo
+    - nilerr
+    - durationcheck
+    - errname
+    - exhaustive
+    - makezero
+    - nolintlint
+    - predeclared
+    - sloglint
+    - whitespace
+  settings:
+    forbidigo:
+      forbid:
+        - pattern: '^fmt\.Print(f|ln)?$'
+          msg: "saída não estruturada — use log/slog"
+        - pattern: '^log\.(Print|Fatal|Panic)(f|ln)?$'
+          msg: "pacote log legado — use log/slog"
+        - pattern: '^http\.(Get|Post|Head)$'
+          msg: "cliente HTTP padrão sem timeout — crie http.Client com Timeout"
+    gocritic:
+      enabled-tags: [diagnostic, performance, style]
+      disabled-checks: [hugeParam, unnamedResult]
+    revive:
+      rules:
+        - name: exported
+        - name: context-as-argument
+        - name: error-return
+        - name: error-strings
+        - name: unused-parameter
+        - name: var-naming
+    sloglint:
+      attr-only: true
+      no-raw-keys: true
+      key-naming-case: snake
+    misspell:
+      locale: US
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+  exclusions:
+    generated: lax
+    rules:
+      - path: _test\.go
+        linters: [gosec, forbidigo, noctx, errcheck, bodyclose]
+      - path: cmd/.*tool.*
+        linters: [forbidigo]
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/MWismeck/desafio-projeto-korp

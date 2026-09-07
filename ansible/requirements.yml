@@ -1,0 +1,22 @@
+# ansible/requirements.yml — collections pinadas
+# Instalar: ansible-galaxy collection install -r ansible/requirements.yml
+#
+# Auditoria de 2026-09-06 — o que o playbook realmente usa:
+#   community.docker  → docker_network, docker_network_info (role network)
+#                       docker_image, docker_compose_v2      (role app)
+#                       docker_container_info                (roles nginx, monitoring)
+#                       docker_container_exec                (role nginx: nginx -t / nginx -s reload)
+#   ansible.builtin   → apt, deb822_repository, get_url, file, user, service, pip, stat, find, copy,
+#                       template, command, uri, wait_for, assert, debug, set_fact, meta
+#                       (tudo em ansible-core >= 2.15; deb822_repository foi adicionado nessa versão)
+# Nenhuma outra collection é necessária: `ansible.posix` estava declarada e NÃO era usada por nenhuma
+# task (grep em roles/ em 2026-09-06) — foi removida para não pedir download que o alvo não precisa.
+# Se um dia entrar `ansible.posix.sysctl`/`mount`/`authorized_key`, declare-a aqui de volta.
+#
+# Dependência de runtime (instalada pela role `docker`, não por aqui): os módulos community.docker
+# baseados em SDK (docker_network, docker_image, docker_container_*) exigem o pacote Python `docker`
+# NO ALVO. `docker_compose_v2` é a exceção — fala com a CLI `docker compose`.
+---
+collections:
+  - name: community.docker
+    version: ">=3.10.0,<5.0.0"   # docker_compose_v2 existe desde 3.6.0; 3.10 traz correções de wait

@@ -1,0 +1,18 @@
+# roles/nginx/handlers/main.yml
+# Os dois handlers escutam o mesmo tópico: `notify: Recarregar o NGINX` dispara TESTE e depois RELOAD,
+# nesta ordem (handlers rodam na ordem de definição). Testar antes de recarregar é o que garante que um
+# conf inválido derrube o playbook em vez de derrubar o proxy: `nginx -s reload` com configuração
+# quebrada faz o master manter os workers antigos, mas o erro passaria despercebido no log.
+---
+- name: Testar a configuração dentro do container antes de recarregar
+  community.docker.docker_container_exec:
+    container: "{{ nginx_container_name }}"
+    argv: [nginx, -t]
+  changed_when: false
+  listen: Recarregar o NGINX
+
+- name: Reload nginx
+  community.docker.docker_container_exec:
+    container: "{{ nginx_container_name }}"
+    argv: [nginx, -s, reload]
+  listen: Recarregar o NGINX

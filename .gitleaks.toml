@@ -1,0 +1,12 @@
+#.gitleaks.toml — gate.
+title = "http-server-projeto-korp"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "exemplos de configuração (nunca valores reais)"
+paths = ['''\.example$''',
+]
+regexes = ['''GF_SECURITY_ADMIN_PASSWORD=changeme''',
+]

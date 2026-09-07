@@ -1,0 +1,62 @@
+# observability/alertmanager/alertmanager.yml — roteamento por severity/team (# §Alertmanager).
+# Profile `full` do compose. Validar: amtool check-config alertmanager.yml. Gate:.
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: default
+  group_by: [alertname, service]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [severity = critical]
+      receiver: oncall-page
+      group_wait: 10s
+      repeat_interval: 1h
+    - matchers: [severity = warning]
+      receiver: oncall-ticket
+      repeat_interval: 12h
+    - matchers: [severity = info]
+      receiver: default
+
+receivers:
+  - name: default
+    webhook_configs:
+      - url: http://localhost:5001/           # placeholder local (a definir pelo Humano: Slack/PagerDuty/e-mail)
+        send_resolved: true
+  - name: oncall-page
+    webhook_configs:
+      - url: http://localhost:5001/page
+        send_resolved: true
+    # slack_configs:
+    #   - api_url: <vault>
+    #     channel: "#korp-oncall"
+    #     title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }} ({{ .CommonLabels.service }})'
+    #     text: '{{ range .Alerts }}{{ .Annotations.summary }} — {{ .Annotations.runbook_url }}{{ "\n" }}{{ end }}'
+  - name: oncall-ticket
+    webhook_configs:
+      - url: http://localhost:5001/ticket
+        send_resolved: true
+
+inhibit_rules:
+  # critical inibe warning do mesmo alerta/serviço (burn-rate rápido já cobre o lento)
+  - source_matchers: [severity = critical]
+    target_matchers: [severity = warning]
+    equal: [alertname, service]
+  # sem scrape (TargetDown) inibe os alertas derivados do serviço
+  - source_matchers: [alertname = TargetDown]
+    target_matchers: [alertname =~ "Service.*"]
+    equal: [service]
+  # 2026-09-06 — a violação de contrato EXPLICA a falha da sonda no mesmo alvo:
+  # ServiceContractViolated e UserPathUnavailable disparam juntos (probe_success = 0 nos dois casos);
+  # o on-call precisa de UM page, o mais específico.
+  - source_matchers: [alertname = ServiceContractViolated]
+    target_matchers: [alertname = UserPathUnavailable]
+    equal: [service, instance]
+  # 2026-09-06 — o OOM explica o reinício em laço, o container sumido e o headroom baixo.
+  # `service` nos alertas de container é o NOME DO CONTAINER (label_replace em container.rules.yml),
+  # por isso o `equal` funciona entre as duas famílias.
+  - source_matchers: [alertname = ContainerOOMKilled]
+    target_matchers: [alertname =~ "ContainerRestartLoop|ServiceRestartLoop|ContainerMissing|ContainerMemoryNearLimit"]
+    equal: [service]

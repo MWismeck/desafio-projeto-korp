@@ -1,0 +1,83 @@
+# observability/prometheus/prometheus.yml — coleta do http-server-projeto-korp e da
+# plataforma de observabilidade ("stack estendido", decisão do Humano em 2026-09-06 /).
+#
+# Validar (sem promtool no host; Docker Desktop no ar):
+#   MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD/observability/prometheus:/cfg" \
+#     --entrypoint promtool prom/prometheus:v2.55.1 check config /cfg/prometheus.yml
+#
+# FLAGS DE PROCESSO exigidas por este arquivo — quem escreve o compose.yml precisa declará-las
+#   --config.file=/etc/prometheus/prometheus.yml
+#   --storage.tsdb.path=/prometheus
+#   --storage.tsdb.retention.time=45d      # >= 30d do error budget + margem (§7)
+#   --storage.tsdb.retention.size=2GB
+#   --web.enable-lifecycle                 # POST /-/reload; NUNCA publicado fora de korp-net/loopback
+#   --log.format=json
+# `--web.enable-admin-api` fica DESLIGADO; a porta é publicada só em 127.0.0.1:9090:9090.
+
+global:
+  scrape_interval: 15s        # base do $__rate_interval do Grafana
+  scrape_timeout: 10s         # SEMPRE < scrape_interval
+  evaluation_interval: 15s
+  external_labels:            # só viajam para Alertmanager/remote_write; não existem em consulta local
+    cluster: korp-local
+    env: local
+
+rule_files:
+  # caminho RELATIVO a este arquivo: vale igual no repositório e em /etc/prometheus dentro do container
+  - rules/*.rules.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]   # perfil `full`; fora dele o Prometheus loga WARN e segue coletando
+      timeout: 10s
+
+# Jobs do PERFIL `full` (cAdvisor, node-exporter, nginx-exporter, blackbox-exporter, Grafana, Alertmanager,
+# nginx-exporter e blackbox) vivem em `scrape_full.yml`, arquivo IRMÃO carregado por este glob.
+# Por que separado: no perfil PADRÃO da demo esses containers não existem; se os jobs estivessem aqui,
+# o /targets abriria com ~11 alvos DOWN no perfil padrão. O glob é resolvido em
+# tempo de carga do config e um glob que NÃO casa nenhum arquivo NÃO é erro — verificado com
+# `promtool check config` em prom/prometheus v2.55.1 e v3.5.0 (exit 0, "is valid prometheus config
+# file syntax"). Logo: no perfil padrão a role do Ansible simplesmente não copia `scrape_full.yml` e o
+# Prometheus sobe só com os jobs abaixo; no perfil estendido ela copia o arquivo e um POST /-/reload basta.
+# Cada arquivo casado pelo glob tem a chave de topo `scrape_configs:` (uma lista solta é rejeitada) e
+# NENHUM `job_name` pode se repetir entre os arquivos (o carregamento falha com "found multiple
+# scrape configs with job name ...").
+scrape_config_files:
+  - scrape_*.yml
+
+scrape_configs:
+  # ============================================================================================
+  # PERFIL PADRÃO — o que o brief exige e o que sustenta os alertas de sintoma.
+  # SÓ jobs cujo alvo existe no perfil padrão do compose: o app e o próprio Prometheus.
+  # ============================================================================================
+
+  # --- o serviço do brief: nome DNS do compose na rede korp-net (C3: nunca localhost) ---
+  - job_name: http-server-projeto-korp
+    metrics_path: /metrics                 # modo compat na:8080
+    scheme: http
+    scrape_protocols: [OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusProto, PrometheusText0.0.4]
+    sample_limit: 5000                     # ~150 séries reais; teto = alarme barato de cardinalidade (§9)
+    label_limit: 30
+    label_name_length_limit: 200
+    label_value_length_limit: 500
+    static_configs:
+      - targets: ["http-server-projeto-korp:8080"]
+        labels:
+          service: http-server-projeto-korp
+          env: local
+          team: sre
+
+  # --- auto-monitoramento do próprio Prometheus (localhost AQUI é o próprio processo: correto) ---
+  - job_name: prometheus
+    metrics_path: /metrics
+    sample_limit: 10000                    # o Prometheus expõe ~1.000 séries próprias
+    label_limit: 30
+    label_name_length_limit: 200
+    label_value_length_limit: 500
+    static_configs:
+      - targets: ["localhost:9090"]
+        labels:
+          service: prometheus
+          env: local
+          team: sre

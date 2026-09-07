@@ -1,0 +1,160 @@
+# observability/prometheus/rules/service.rules.yml — recording rules RED/SLI e alertas burn-rate do
+# http-server-projeto-korp. Padrões:  (level:metric:operations),,
+#  (99,9 %/30 d). Testes: tests/service.test.yml (promtool test rules). Gates:,,.
+groups:
+  - name: http-server-projeto-korp.recording
+    rules:
+      # volume e erros (RED)
+      - record: service:http_requests:rate5m
+        expr: sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[5m]))
+      - record: service:http_requests_errors:rate5m
+        expr: sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code=~"5.."}[5m]))
+
+      # SLI de disponibilidade = 1 - 5xx/total, por janela
+      - record: service:sli_availability:ratio_rate5m
+        expr: 1 - (sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code=~"5.."}[5m])) / clamp_min(sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[5m])), 1e-9))
+      - record: service:sli_availability:ratio_rate30m
+        expr: 1 - (sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code=~"5.."}[30m])) / clamp_min(sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[30m])), 1e-9))
+      - record: service:sli_availability:ratio_rate1h
+        expr: 1 - (sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code=~"5.."}[1h])) / clamp_min(sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[1h])), 1e-9))
+      - record: service:sli_availability:ratio_rate6h
+        expr: 1 - (sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code=~"5.."}[6h])) / clamp_min(sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[6h])), 1e-9))
+      - record: service:sli_availability:ratio_rate3d
+        expr: 1 - (sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code=~"5.."}[3d])) / clamp_min(sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[3d])), 1e-9))
+      - record: service:sli_availability:ratio_rate30d
+        expr: 1 - (sum by (service) (rate(http_requests_total{service="http-server-projeto-korp",code=~"5.."}[30d])) / clamp_min(sum by (service) (rate(http_requests_total{service="http-server-projeto-korp"}[30d])), 1e-9))
+
+      # SLI de latência = requisições < 300 ms / total, por janela
+      - record: service:sli_latency_good:ratio_rate5m
+        expr: sum by (service) (rate(http_request_duration_seconds_bucket{service="http-server-projeto-korp",le="0.3"}[5m])) / clamp_min(sum by (service) (rate(http_request_duration_seconds_count{service="http-server-projeto-korp"}[5m])), 1e-9)
+      - record: service:sli_latency_good:ratio_rate30m
+        expr: sum by (service) (rate(http_request_duration_seconds_bucket{service="http-server-projeto-korp",le="0.3"}[30m])) / clamp_min(sum by (service) (rate(http_request_duration_seconds_count{service="http-server-projeto-korp"}[30m])), 1e-9)
+      - record: service:sli_latency_good:ratio_rate1h
+        expr: sum by (service) (rate(http_request_duration_seconds_bucket{service="http-server-projeto-korp",le="0.3"}[1h])) / clamp_min(sum by (service) (rate(http_request_duration_seconds_count{service="http-server-projeto-korp"}[1h])), 1e-9)
+      - record: service:sli_latency_good:ratio_rate6h
+        expr: sum by (service) (rate(http_request_duration_seconds_bucket{service="http-server-projeto-korp",le="0.3"}[6h])) / clamp_min(sum by (service) (rate(http_request_duration_seconds_count{service="http-server-projeto-korp"}[6h])), 1e-9)
+      - record: service:sli_latency_good:ratio_rate3d
+        expr: sum by (service) (rate(http_request_duration_seconds_bucket{service="http-server-projeto-korp",le="0.3"}[3d])) / clamp_min(sum by (service) (rate(http_request_duration_seconds_count{service="http-server-projeto-korp"}[3d])), 1e-9)
+      - record: service:sli_latency_good:ratio_rate30d
+        expr: sum by (service) (rate(http_request_duration_seconds_bucket{service="http-server-projeto-korp",le="0.3"}[30d])) / clamp_min(sum by (service) (rate(http_request_duration_seconds_count{service="http-server-projeto-korp"}[30d])), 1e-9)
+
+  # CONVENÇÃO DE PREFIXO (fixada pelo Architect em 2026-09-06;  §"Limites, cardinalidade e
+  # retenção";  nivel:metrica:operacao):
+  #   `service:` = SLI CRU medido (razão bons/total, sem nenhum objetivo embutido);
+  #   `slo:`     = ARTEFATO DERIVADO de um SLO (burn rate, error budget) — traz a constante do objetivo
+  #                já resolvida e a label `slo`, que identifica o objetivo.
+  # Por isso o error budget mora aqui e NÃO no painel:  e  exigem UMA
+  # verdade. Se cada dashboard recalcular `1 - (1 - sli)/(1 - objetivo)`, dois painéis passam a discordar
+  # no dia em que o objetivo mudar — e o painel não tem teste unitário; esta regra tem.
+  - name: http-server-projeto-korp.slo
+    interval: 1m          # janela de 30 d é cara e não muda em 15 s
+    rules:
+      # Error budget de DISPONIBILIDADE restante na janela de 30 d, normalizado em [0,1]:
+      #   1 = orçamento intacto (SLI 100 %); 0 = esgotado ou estourado.
+      # Fórmula canônica: 1 - (1 - SLI_30d) / (1 - objetivo); objetivo 0.999 → 0.001,
+      # constante já RESOLVIDA para o teste ter valor exato.
+      # `clamp(..., 0, 1)` protege as duas pontas: sem ele um incidente longo produz -999 e destrói a
+      # escala do painel; e uma janela de 30 d ainda incompleta pode passar de 1.
+      # Consequência aceita: orçamento ESTOURADO satura em 0. Quem precisa da profundidade do estouro
+      # olha o burn rate, que não é clampado.
+      - record: slo:availability:error_budget_remaining_ratio30d
+        expr: clamp(1 - ((1 - service:sli_availability:ratio_rate30d{service="http-server-projeto-korp"}) / 0.001), 0, 1)
+        labels: {slo: availability}
+
+  - name: http-server-projeto-korp.alerts
+    rules:
+      # ---- disponibilidade: burn-rate multiwindow (SLO 99,9 % → budget 0.001) ----
+      - alert: ServiceHighErrorRateBurn
+        expr: |
+          ((1 - service:sli_availability:ratio_rate1h{service="http-server-projeto-korp"}) > (14.4 * 0.001)
+            and
+            (1 - service:sli_availability:ratio_rate5m{service="http-server-projeto-korp"}) > (14.4 * 0.001))
+          or
+          ((1 - service:sli_availability:ratio_rate6h{service="http-server-projeto-korp"}) > (6 * 0.001)
+            and
+            (1 - service:sli_availability:ratio_rate30m{service="http-server-projeto-korp"}) > (6 * 0.001))
+        for: 2m
+        labels:
+          severity: critical
+          service: http-server-projeto-korp
+          team: sre
+        annotations:
+          summary: "Error budget de disponibilidade queimando rápido (http-server-projeto-korp)"
+          description: "Taxa de 5xx acima de 14.4x (1h/5m) ou 6x (6h/30m) do permitido pelo SLO 99.9%/30d."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicehigherrorrateburn"
+
+      - alert: ServiceHighErrorRateBurn
+        expr: |
+          (1 - service:sli_availability:ratio_rate3d{service="http-server-projeto-korp"}) > (1 * 0.001)
+          and
+          (1 - service:sli_availability:ratio_rate6h{service="http-server-projeto-korp"}) > (1 * 0.001)
+        for: 15m
+        labels:
+          severity: warning
+          service: http-server-projeto-korp
+          team: sre
+        annotations:
+          summary: "Error budget de disponibilidade em consumo lento (http-server-projeto-korp)"
+          description: "Taxa de 5xx acima de 1x (3d/6h) do permitido pelo SLO 99.9%/30d: abrir ticket."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicehigherrorrateburn"
+
+      # ---- latência: mesma estrutura sobre o SLI < 300 ms ----
+      - alert: ServiceHighLatencyBurn
+        expr: |
+          ((1 - service:sli_latency_good:ratio_rate1h{service="http-server-projeto-korp"}) > (14.4 * 0.001)
+            and
+            (1 - service:sli_latency_good:ratio_rate5m{service="http-server-projeto-korp"}) > (14.4 * 0.001))
+          or
+          ((1 - service:sli_latency_good:ratio_rate6h{service="http-server-projeto-korp"}) > (6 * 0.001)
+            and
+            (1 - service:sli_latency_good:ratio_rate30m{service="http-server-projeto-korp"}) > (6 * 0.001))
+        for: 2m
+        labels:
+          severity: critical
+          service: http-server-projeto-korp
+          team: sre
+        annotations:
+          summary: "Error budget de latência queimando rápido (http-server-projeto-korp)"
+          description: "Fração de requisições acima de 300ms consome o budget a 14.4x (1h/5m) ou 6x (6h/30m)."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicehighlatencyburn"
+
+      - alert: ServiceHighLatencyBurn
+        expr: |
+          (1 - service:sli_latency_good:ratio_rate3d{service="http-server-projeto-korp"}) > (1 * 0.001)
+          and
+          (1 - service:sli_latency_good:ratio_rate6h{service="http-server-projeto-korp"}) > (1 * 0.001)
+        for: 15m
+        labels:
+          severity: warning
+          service: http-server-projeto-korp
+          team: sre
+        annotations:
+          summary: "Error budget de latência em consumo lento (http-server-projeto-korp)"
+          description: "Fração de requisições acima de 300ms consome o budget a 1x (3d/6h): abrir ticket."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicehighlatencyburn"
+
+      # ---- alcance: o Prometheus não consegue coletar o serviço ----
+      - alert: TargetDown
+        expr: up{job="http-server-projeto-korp"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          service: http-server-projeto-korp
+          team: sre
+        annotations:
+          summary: "Prometheus não consegue coletar o http-server-projeto-korp"
+          description: "O target {{ $labels.instance }} está down há mais de 1 minuto: sem métricas, sem visibilidade."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#targetdown"
+
+      # ---- disponibilidade declarada pelo próprio serviço ----
+      - alert: ServiceUnavailable
+        expr: service_up{service="http-server-projeto-korp"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          service: http-server-projeto-korp
+          team: sre
+        annotations:
+          summary: "http-server-projeto-korp se declara indisponível (service_up == 0)"
+          description: "O readiness do serviço falha há mais de 2 minutos; requisições via NGINX tendem a 502."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#serviceunavailable"

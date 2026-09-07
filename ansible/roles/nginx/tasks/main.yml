@@ -1,0 +1,103 @@
+# roles/nginx/tasks/main.yml — proxy reverso: gera nginx/conf.d/http-server-projeto-korp.conf a
+# partir do template e recarrega o container só quando o arquivo muda (handler).
+#
+# ENTREGA DO stub_status.conf: o serviço nginx do compose.yml monta o DIRETÓRIO inteiro
+# (`./nginx/conf.d:/etc/nginx/conf.d:ro`, conferido em 2026-09-06), e não arquivo por arquivo. Logo
+# qualquer arquivo colocado em {{ nginx_conf_dir }} já está em /etc/nginx/conf.d dentro do container:
+# não existe passo de cópia para dentro do container, e o `include /etc/nginx/conf.d/*.conf` do
+# nginx.conf da imagem oficial o carrega no próximo reload. Esta role, portanto, CONFERE a presença do
+# arquivo versionado, valida o diretório inteiro e prova que a 8081 responde — sem reescrever nada
+# além do conf canônico.  preservado: proxy reverso e stub_status são server blocks separados,
+# em arquivos separados, em portas separadas (80 e 8081).
+---
+- name: Garantir o diretório nginx/conf.d no projeto (volume montado em /etc/nginx/conf.d)
+  ansible.builtin.file:
+    path: "{{ nginx_conf_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Gerar http-server-projeto-korp.conf a partir do template
+  ansible.builtin.template:
+    src: http-server-projeto-korp.conf.j2
+    dest: "{{ nginx_conf_dir }}/{{ nginx_site_conf }}"
+    mode: "0644"
+    # `--network {{ nginx_network }}` é obrigatório: sem ele o NGINX não resolve o nome do upstream em
+    # tempo de carga e o teste falha com "host not found in upstream" (ver defaults/main.yml).
+    validate: >-
+      docker run --rm --network {{ nginx_network }}
+      -v %s:/etc/nginx/conf.d/{{ nginx_site_conf }}:ro
+      {{ nginx_image }} nginx -t
+  notify: Recarregar o NGINX
+
+- name: Verificar o stub_status.conf no diretório montado pelo NGINX
+  ansible.builtin.stat:
+    path: "{{ nginx_conf_dir }}/{{ nginx_stub_status_conf }}"
+  register: nginx_stub_status_stat
+
+- name: Falhar se o perfil full foi pedido sem o stub_status.conf
+  # No perfil `full` o nginx-exporter raspa http://nginx:8081/stub_status. Sem este arquivo o server da
+  # 8081 não existe, o exporter recebe "connection refused" e o job `nginx` fica DOWN — falha que se
+  # manifesta longe da causa. Fora do perfil `full` o arquivo é inerte (a 8081 só está em `expose:`).
+  ansible.builtin.assert:
+    that: nginx_stub_status_stat.stat.exists
+    fail_msg: >-
+      {{ nginx_conf_dir }}/{{ nginx_stub_status_conf }} ausente — exigido pelo perfil full;
+      o arquivo faz parte do repositório em nginx/conf.d/{{ nginx_stub_status_conf }}
+    success_msg: "{{ nginx_stub_status_conf }} presente — o nginx-exporter poderá ler a 8081"
+  when: nginx_profile_full | bool
+
+- name: Validar o diretório conf.d inteiro com nginx -t (imagem oficial)
+  # O `validate:` do template testa UM arquivo isolado; este passo testa o conjunto que o NGINX
+  # realmente carrega (proxy reverso + stub_status + o que houver), pegando conflito entre eles.
+  ansible.builtin.command: >
+    docker run --rm --network {{ nginx_network }}
+    -v {{ nginx_conf_dir }}:/etc/nginx/conf.d:ro
+    {{ nginx_image }} nginx -t
+  changed_when: false
+
+- name: Garantir que o container nginx está em execução
+  community.docker.docker_container_info:
+    name: "{{ nginx_container_name }}"
+  register: nginx_info
+
+- name: Falhar se o nginx não está rodando
+  ansible.builtin.assert:
+    that:
+      - nginx_info.exists
+      - nginx_info.container.State.Running
+    fail_msg: "container {{ nginx_container_name }} não está em execução (role app deve tê-lo subido)"
+
+- name: Confirmar que o container monta o DIRETÓRIO conf.d (e não arquivo por arquivo)
+  # É esta montagem que faz "entregar o stub_status.conf" ser apenas "escrever o arquivo no
+  # diretório". Se um dia virar mount por arquivo, o stub_status somem sem erro visível.
+  ansible.builtin.assert:
+    that: nginx_conf_mounts | select('equalto', '/etc/nginx/conf.d') | list | length > 0
+    fail_msg: >-
+      o container nginx não monta o diretório /etc/nginx/conf.d
+      (mounts atuais: {{ nginx_conf_mounts | join(', ') }})
+  vars:
+    nginx_conf_mounts: "{{ nginx_info.container.Mounts | map(attribute='Destination') | list }}"
+
+- name: Aplicar o reload pendente antes de conferir o stub_status
+  # Sem o flush o handler só rodaria no fim da play e a checagem abaixo leria a configuração antiga.
+  ansible.builtin.meta: flush_handlers
+
+- name: Confirmar que o NGINX serve /stub_status na 8081 (perfil full)
+  # Prova de ponta a ponta do que o nginx-exporter vai consumir, executada de DENTRO do container: a
+  # 8081 não é publicada no host (mantém só a 80 publicada).
+  community.docker.docker_container_exec:
+    container: "{{ nginx_container_name }}"
+    argv:
+      - wget
+      - -q
+      - -O
+      - "-"
+      - "http://127.0.0.1:{{ nginx_stub_status_port }}/stub_status"
+  register: nginx_stub_status_probe
+  changed_when: false
+  when: nginx_profile_full | bool
+
+- name: Exibir a saída do stub_status (insumo USE da borda)
+  ansible.builtin.debug:
+    msg: "{{ nginx_stub_status_probe.stdout_lines | default }}"
+  when: nginx_profile_full | bool
