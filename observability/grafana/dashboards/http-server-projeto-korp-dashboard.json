@@ -126,7 +126,7 @@
       "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "service:sli_availability:ratio_rate30d{service=\"$service\"}", "instant": true, "legendFormat": "SLI 30d" } ],
-      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 3, "min": 0, "max": 1, "noValue": "sem tráfego", "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "orange", "value": 0.995 }, { "color": "green", "value": 0.999 } ] } }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 2, "min": 0, "max": 1, "noValue": "sem tráfego", "thresholds": { "mode": "absolute", "steps": [ { "color": "red", "value": null }, { "color": "orange", "value": 0.995 }, { "color": "green", "value": 0.999 } ] } }, "overrides": [] },
       "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "colorMode": "value", "graphMode": "none", "textMode": "value" },
       "links": [ { "title": "SLO overview", "url": "/d/slo-overview?${__url_time_range}", "targetBlank": false } ]
     },
@@ -155,7 +155,7 @@
       "gridPos": { "h": 8, "w": 8, "x": 8, "y": 7 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "1 - service:sli_availability:ratio_rate5m{service=\"$service\"}", "legendFormat": "erro 5m" } ],
-      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 3, "min": 0, "noValue": "sem tráfego", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "thresholdsStyle": { "mode": "line" } }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.001 }, { "color": "red", "value": 0.0144 } ] } }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 2, "min": 0, "noValue": "sem tráfego", "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "thresholdsStyle": { "mode": "line" } }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.001 }, { "color": "red", "value": 0.0144 } ] } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "multi" } },
       "links": [ { "title": "Runbook ServiceHighErrorRateBurn", "url": "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicehigherrorrateburn", "targetBlank": true } ]
     },
@@ -220,7 +220,7 @@
       "gridPos": { "h": 6, "w": 12, "x": 0, "y": 23 },
       "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
       "targets": [ { "refId": "A", "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" }, "expr": "process_open_fds{service=\"$service\",instance=~\"$instance\"} / process_max_fds{service=\"$service\",instance=~\"$instance\"}", "legendFormat": "{{instance}}" } ],
-      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 3, "min": 0, "max": 1, "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "thresholdsStyle": { "mode": "line" } }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.7 }, { "color": "red", "value": 0.9 } ] } }, "overrides": [] },
+      "fieldConfig": { "defaults": { "unit": "percentunit", "decimals": 2, "min": 0, "max": 1, "custom": { "drawStyle": "line", "lineWidth": 1, "fillOpacity": 10, "spanNulls": false, "thresholdsStyle": { "mode": "line" } }, "thresholds": { "mode": "absolute", "steps": [ { "color": "green", "value": null }, { "color": "orange", "value": 0.7 }, { "color": "red", "value": 0.9 } ] } }, "overrides": [] },
       "options": { "legend": { "displayMode": "list", "placement": "bottom" }, "tooltip": { "mode": "single" } }
     },
     {
