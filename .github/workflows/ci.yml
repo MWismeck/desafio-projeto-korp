@@ -147,7 +147,10 @@ jobs:
 
       - name: Smoke — sobe o ambiente e chama o serviço pelo NGINX
         run: |
-          cp.env.example.env
+          cp .env.example .env
+          # korp-net e external: true no compose: quem cria e a role network do Ansible ou o alvo up
+          # do Makefile. Sem isto o compose recusa subir (network korp-net declared as external).
+          docker network inspect korp-net >/dev/null 2>&1 || docker network create --driver bridge korp-net
           VERSION=ci docker compose up -d --wait --wait-timeout 90
           docker compose ps
           body="$(curl -fsS http://localhost/projeto-korp)"
@@ -155,12 +158,16 @@ jobs:
           echo "$body" | docker run --rm -i ghcr.io/jqlang/jq:1.7.1 -e '.nome == "Projeto Korp" and (.horario | length) > 0' >/dev/null
           curl -fsS http://localhost/swagger/index.html >/dev/null
           curl -fsS http://localhost:9090/-/ready
-          # o alvo do serviço precisa estar UP no Prometheus
+          # O alvo do servico precisa estar UP no Prometheus. activeTargets[] COM os colchetes: sem
+          # eles o filtro roda sobre o ARRAY inteiro, nunca casa, e a espera terminava em silencio,
+          # dando o smoke por bom. Por isso tambem o ok: laco que esgota tem de reprovar.
+          ok=0
           for _ in $(seq 1 12); do
-            curl -s http://localhost:9090/api/v1/targets \
-              | docker run --rm -i ghcr.io/jqlang/jq:1.7.1 -e '.data.activeTargets | select(.labels.job=="http-server-projeto-korp") | select(.health=="up")' >/dev/null && break
+            if curl -s http://localhost:9090/api/v1/targets \
+              | docker run --rm -i ghcr.io/jqlang/jq:1.7.1 -e '.data.activeTargets[] | select(.labels.job=="http-server-projeto-korp") | select(.health=="up")' >/dev/null; then ok=1; break; fi
             sleep 5
           done
+          if [ "$ok" != 1 ]; then echo "::error::alvo http-server-projeto-korp nao ficou UP no Prometheus"; exit 1; fi
 
       - name: Logs em caso de falha
         if: failure()
@@ -168,7 +175,9 @@ jobs:
 
       - name: Derruba o stack
         if: always()
-        run: docker compose --profile full down -v --remove-orphans
+        run: |
+          docker compose --profile full down -v --remove-orphans
+          docker network rm korp-net 2>/dev/null || true
 
   observability:
     name: Observabilidade — regras, alertas, dashboards e configs
