@@ -89,6 +89,30 @@ jobs:
           docker run --rm -v "$PWD:/src" aquasec/trivy:0.58.0 \
             fs --scanners vuln,misconfig,secret --severity HIGH,CRITICAL --exit-code 1 --no-progress /src
 
+      # As duas verificações abaixo não são de ferramenta: são regras deste projeto que nenhuma das
+      # anteriores cobre. O gitleaks encontra segredo pelo FORMATO do valor; um `.env` versionado com
+      # `APP_ENV=local` não casa com padrão nenhum e passaria limpo — mas o arquivo não pode existir no
+      # histórico, porque é nele que a senha vai parar no dia em que alguém copiar o `.env.example`.
+      - name: .env nunca versionado (só .env.example)
+        run: |
+          hits="$(git ls-files | grep -E '(^|/)\.env$' || true)"
+          if [ -n "$hits" ]; then
+            echo "::error::.env versionado no git: $hits — versione apenas .env.example"
+            exit 1
+          fi
+
+      # O gosec sinaliza pprof IMPORTADO, não pprof EXPOSTO. Importar net/http/pprof registra os
+      # handlers no DefaultServeMux por efeito colateral do init; servir esse mux numa porta pública
+      # entrega heap, goroutines e profile de CPU a qualquer cliente. O serviço usa mux próprio
+      # (internal/server), e esta asserção existe para impedir a regressão silenciosa.
+      - name: pprof/expvar fora do mux público
+        run: |
+          if grep -rqE '"net/http/pprof"|"expvar"' --include='*.go' --exclude='*_test.go' . \
+            && grep -rqE 'ListenAndServe\("?:[0-9]+"?,[[:space:]]*nil\)' --include='*.go' .; then
+            echo "::error::pprof/expvar registrados no DefaultServeMux servido publicamente — use listener interno"
+            exit 1
+          fi
+
   docker:
     name: Docker — imagem, compose e smoke pela porta 80
     runs-on: ubuntu-latest
