@@ -1,14 +1,11 @@
 # .dockerignore — contexto mínimo
 .git
 .github
-.agents
-.claude
 docs
 observability
 ansible
 nginx
 slo
-scripts
 bin
 coverage*
 *.md

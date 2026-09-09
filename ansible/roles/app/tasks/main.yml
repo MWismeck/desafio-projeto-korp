@@ -20,7 +20,7 @@
     paths: "{{ project_root }}"
     patterns: ["*.go", "go.mod", "go.sum", "Dockerfile"]
     recurse: true
-    excludes: [".git", "vendor", ".agents"]
+    excludes: [".git", "vendor"]
     get_checksum: true
   register: app_sources
 
