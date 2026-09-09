@@ -2,8 +2,8 @@
 # (blackbox_exporter atravessando o NGINX). Caso positivo e negativo por alerta.
 # Rodar: promtool test rules external.test.yml
 #
-# Nota: `env` e `team` das séries reais vêm de static_configs.labels do job blackbox-http
-# . Os testes abaixo modelam só o que a REGRA usa.
+# Nota: `env` e `team` das séries reais vêm de static_configs.labels do job blackbox-http.
+# Os testes abaixo modelam só o que a REGRA usa.
 rule_files:
   - ../external.rules.yml
 
@@ -57,7 +57,7 @@ tests:
   # ============================================================================================
   # Caso 2 (NEGATIVO decisivo): o APP caiu (service_up == 0) e por isso a sonda falha.
   # UserPathUnavailable NÃO pode disparar — quem fala aqui é ServiceUnavailable/TargetDown
-  # (service.rules.yml). É o `and on  service_up == 1` que garante a separação.
+  # (service.rules.yml). É o `and on () service_up == 1` que garante a separação.
   # ============================================================================================
   - interval: 1m
     input_series:
@@ -71,7 +71,7 @@ tests:
         exp_alerts: []
 
   # ============================================================================================
-  # Caso 3 (POSITIVO): HTTP 200 com corpo FORA do contrato de  — o módulo korp_contract
+  # Caso 3 (POSITIVO): HTTP 200 com corpo FORA do contrato da API — o módulo korp_contract
   # reprova pela regex. O SLI interno de 5xx não vê nada disso.
   # ============================================================================================
   - interval: 1m

@@ -1,5 +1,5 @@
 # Roteamento de alerta por severidade e por time.
-# Profile `full` do compose. Validar: amtool check-config alertmanager.yml. Gate:.
+# Profile `full` do compose. Validar: amtool check-config alertmanager.yml.
 global:
   resolve_timeout: 5m
 

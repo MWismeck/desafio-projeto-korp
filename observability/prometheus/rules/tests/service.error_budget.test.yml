@@ -4,7 +4,7 @@
 # POR QUE UM ARQUIVO SEPARADO de service.test.yml: a janela é de 30 d. `promtool test rules` avalia
 # TODOS os grupos a cada `evaluation_interval` até o maior `eval_time`; com o `evaluation_interval: 1m`
 # de service.test.yml isso seriam 43.200 avaliações. Aqui o passo é `6h` (121 avaliações) e as séries
-# são de 6 em 6 h — a receita de  para janelas longas. Os alertas continuam
+# são de 6 em 6 h — a receita usual para janelas longas. Os alertas continuam
 # testados em service.test.yml; este arquivo só assevera o valor da regra.
 #
 # Prometheus 3.x tem range selector ABERTO À ESQUERDA — `[30d]` cobre (t-30d, t] em vez de [t-30d, t].

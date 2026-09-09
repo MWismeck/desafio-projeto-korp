@@ -113,11 +113,10 @@ alerting:
     - ServiceHighLatencyBurn            # SLI interno: latency
     - ServiceExternalAvailabilityBurn   # SLI externo: availability_external (external.rules.yml)
   # Alertas que protegem o SLI externo sem serem burn-rate: sintomas binários e imediatos do caminho do
-  # usuário. Ficam listados aqui para que renomear qualquer um deles obrigue a atualizar este arquivo
-  #.
+  # usuário. Ficam listados aqui para que renomear qualquer um deles obrigue a atualizar este arquivo.
   related_alerts:
     - UserPathUnavailable               # app são + borda fora: interno 100 %, externo 0 %
-    - ServiceContractViolated           # HTTP 200 com corpo fora do invisível para SLI de 5xx
+    - ServiceContractViolated           # HTTP 200 com corpo fora do contrato: invisível para o SLI de 5xx
   runbooks: https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md
 
 dashboard:

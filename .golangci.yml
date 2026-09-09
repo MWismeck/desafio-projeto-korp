@@ -1,4 +1,4 @@
-# .golangci.yml — configuração v2 (golangci-lint >= 2.0). Gate:.
+# .golangci.yml — configuração v2 (golangci-lint >= 2.0).
 version: "2"
 
 run:

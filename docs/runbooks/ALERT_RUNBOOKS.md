@@ -22,7 +22,7 @@ related: [../DECISOES_TECNICAS.md,../.../observability/prometheus/rules/]
 | [TargetDown](#targetdown) | critical | Prometheus não consegue coletar o serviço | idem |
 | [ServiceUnavailable](#serviceunavailable) | critical | serviço se declara indisponível (`service_up == 0`) | idem |
 | [UserPathUnavailable](#userpathunavailable) | critical | app são, mas o caminho do usuário (via NGINX) não responde | `external.rules.yml` |
-| [ServiceContractViolated](#servicecontractviolated) | critical | HTTP 200 com corpo fora do contrato do  | `external.rules.yml` |
+| [ServiceContractViolated](#servicecontractviolated) | critical | HTTP 200 com corpo fora do contrato da API | `external.rules.yml` |
 | [ServiceExternalAvailabilityBurn](#serviceexternalavailabilityburn) | critical/warning | error budget de disponibilidade EXTERNA queimando | `external.rules.yml` |
 | [ContainerOOMKilled](#containeroomkilled) | critical | o kernel matou o container por estouro de memória | `container.rules.yml` |
 | [ContainerRestartLoop](#containerrestartloop) | critical | container reinicia em laço (visão do runtime) | `container.rules.yml` |
@@ -187,7 +187,7 @@ que o defeito é de configuração do proxy; falhando, o defeito é de rede, DNS
 | # | Situação | Ação |
 |---|---|---|
 | 1 | `nginx -t` reprova | restaurar a conf boa (`git checkout -- nginx/conf.d/http-server-projeto-korp.conf`) e `docker compose exec nginx nginx -s reload` |
-| 2 | `nginx -t` passa mas o proxy erra | corrigir para `proxy_pass http://http-server-projeto-korp:8080;` (**nunca** `localhost`/`127.0.0.1` —  e recarregar |
+| 2 | `nginx -t` passa mas o proxy erra | corrigir para `proxy_pass http://http-server-projeto-korp:8080;` (**nunca** `localhost`/`127.0.0.1`, que dentro do container do NGINX é o próprio NGINX) e recarregar |
 | 3 | container `nginx` parado ou reiniciando | `docker compose up -d nginx`; se persistir, `docker compose up -d --force-recreate nginx` |
 | 4 | `nginx` fora da `korp-net` (rede recriada por fora do compose) | `docker compose up -d` (reconecta) e conferir com `docker network inspect korp-net` |
 | 5 | app inalcançável de dentro do `nginx` (DNS do compose não resolve) | recriar os dois, nesta ordem: `docker compose up -d --force-recreate http-server-projeto-korp nginx` |
@@ -240,7 +240,7 @@ ou path errado). Errado nos dois → defeito do app.
 | 4 | corpo errado vindo do app (campo renomeado, `{}` em erro parcial) | rollback; sem versão anterior boa, correção por PR de emergência (`../workflows/bug.md`) |
 
 **Não silenciar sem PR de correção associado**: silenciar este alerta devolve exatamente o ponto cego que
-o  existe para fechar.
+a sonda externa existe para fechar.
 
 **Confirmar resolução.** `probe_failed_due_to_regex{job="blackbox-http"}` = 0 e
 `probe_success{probe="contrato"}` = 1; o comando

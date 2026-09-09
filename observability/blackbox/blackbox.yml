@@ -1,14 +1,14 @@
 # observability/blackbox/blackbox.yml — Prometheus Blackbox Exporter (profile `full`).
 # Papel: prova de disponibilidade vista DE FORA. Complementa: `service_up` é auto-declaração,
-# `/healthz` é probe local e `up` é a visão do scrape — nenhum dos três prova que o contrato do
-#  continua sendo cumprido através do NGINX, do ponto de vista de um cliente.
+# `/healthz` é probe local e `up` é a visão do scrape — nenhum dos três prova que o contrato
+# da API continua sendo cumprido através do NGINX, do ponto de vista de um cliente.
 #
 
 modules:
   # ------------------------------------------------------------------------------------------------
   # korp_contract — testa o CONTRATO, não apenas o código 200.
   # POR QUE checar o corpo: um proxy mal configurado, uma página do NGINX ou um handler que devolve
-  # {} respondem 200 e passariam num probe ingênuo. O  exige o campo "nome" com o valor
+  # {} respondem 200 e passariam num probe ingênuo. O desafio exige o campo "nome" com o valor
   # "Projeto Korp"; é isso que este módulo verifica — assim `probe_success` vira SLI de contrato.
   # Alvo esperado (definido em observability/prometheus/prometheus.yml, de outro dono):
   #   http://nginx:80/projeto-korp — o caminho público real, atravessando o proxy reverso.

@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1.7
 # Dockerfile — http-server-projeto-korp.
-# Multi-stage: build estático em golang:1.24 → runtime alpine:3 non-root (< 20 MB, COM shell).
-# Base decidida em  (revisão 2026-09-06): Alpine para permitir diagnóstico em campo
+# Multi-stage: build estático em golang:1.25 → runtime alpine:3 non-root (< 20 MB, COM shell).
+# Base Alpine em vez de distroless para permitir diagnóstico em campo
 # (docker exec -it ... sh; apk add --no-cache curl tcpdump) sem rebuild. Mitigações obrigatórias:
-# usuário não-root, base pinada por digest, apk --no-cache, trivy image em.
+# usuário não-root, base pinada por digest, apk --no-cache e `trivy image` no CI.
 
 ARG GO_VERSION=1.25
 # digest de 2026-09-07 (docker buildx imagetools inspect golang:1.25); a tag fica antes do @ para leitura

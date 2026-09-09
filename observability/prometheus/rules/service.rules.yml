@@ -42,12 +42,11 @@ groups:
       - record: service:sli_latency_good:ratio_rate30d
         expr: sum by (service) (rate(http_request_duration_seconds_bucket{service="http-server-projeto-korp",le="0.3"}[30d])) / clamp_min(sum by (service) (rate(http_request_duration_seconds_count{service="http-server-projeto-korp"}[30d])), 1e-9)
 
-  # Convenção de prefixo: `service:` para SLI cru, `slo:` para o que deriva dele (burn rate,
-  # retenção";  nivel:metrica:operacao):
+  # Convenção de prefixo (`nivel:metrica:operacao`, a recomendada pelo Prometheus):
   #   `service:` = SLI CRU medido (razão bons/total, sem nenhum objetivo embutido);
   #   `slo:`     = ARTEFATO DERIVADO de um SLO (burn rate, error budget) — traz a constante do objetivo
   #                já resolvida e a label `slo`, que identifica o objetivo.
-  # Por isso o error budget mora aqui e NÃO no painel:  e  exigem UMA
+  # Por isso o error budget mora aqui e NÃO no painel: o cálculo precisa ter UMA
   # verdade. Se cada dashboard recalcular `1 - (1 - sli)/(1 - objetivo)`, dois painéis passam a discordar
   # no dia em que o objetivo mudar — e o painel não tem teste unitário; esta regra tem.
   - name: http-server-projeto-korp.slo

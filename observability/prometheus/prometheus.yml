@@ -1,6 +1,6 @@
 # Coleta do http-server-projeto-korp e dos exporters do perfil `full`.
 #
-# Validar:  make promtool-test
+# Validar: make promtool-test
 global:
   scrape_interval: 15s        # base do $__rate_interval do Grafana
   scrape_timeout: 10s         # SEMPRE < scrape_interval

@@ -1,11 +1,11 @@
 # roles/validate/tasks/main.yml — validação final: requisição HTTP via NGINX e exibição
 # da resposta no console. Falha do playbook se a resposta não for a esperada (nunca ignore_errors).
 #
-# No perfil `full` a role acrescenta a prova que o  sozinho não dá: o `uri` abaixo é um
+# No perfil `full` a role acrescenta a prova que o teste de aceite sozinho não dá: o `uri` abaixo é um
 # teste de aceite executado UMA vez, no fim do provisionamento; `probe_success` é a mesma verificação
 # repetida a cada 15 s pelo blackbox-exporter, de fora, atravessando o NGINX. Se ela não estiver
-# verde, o caminho do usuário não está observado — e é exatamente esse o ponto cego que o
-# existe para fechar. Por isso a falha aqui é falha do playbook, não aviso.
+# verde, o caminho do usuário não está observado — e é exatamente esse o ponto cego que a
+# sonda externa existe para fechar. Por isso a falha aqui é falha do playbook, não aviso.
 ---
 - name: Aguardar a porta 80 aceitar conexão (NGINX publicado no host)
   ansible.builtin.wait_for:
@@ -84,13 +84,13 @@
     that: validate_probe_contrato | selectattr('value.1', 'equalto', '1') | list | length > 0
     fail_msg: >-
       a sonda externa NÃO está enxergando o serviço através do NGINX
-      (probe_success{probe={{ validate_probe_label }}} != 1). O caminho do usuário do /
+      (probe_success{probe={{ validate_probe_label }}} != 1). O caminho do usuário
       está quebrado ou o blackbox-exporter não alcança http://nginx/projeto-korp — investigue
       `docker compose logs nginx blackbox-exporter` e o /targets do job blackbox-http.
       Séries recebidas: {{ validate_probe.json.data.result | default }}
     success_msg: >-
       probe_success=1 em {{ validate_probe_contrato | map(attribute='metric.instance') | join(', ') }}
-      — o contrato do  está sendo cumprido através do proxy reverso, de fora
+      — o contrato da API está sendo cumprido através do proxy reverso, de fora
   vars:
     validate_probe_contrato: >-
       {{ validate_probe.json.data.result | default

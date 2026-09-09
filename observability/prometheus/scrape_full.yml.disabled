@@ -43,9 +43,9 @@ scrape_configs:
           team: sre
 
   # --- probe externo (blackbox_exporter): disponibilidade VISTA DE FORA, atravessando o NGINX ---
-  # É o único job que mede o caminho do usuário de / e o contrato de 
+  # É o único job que mede o caminho do usuário e o contrato da API
   # (o módulo korp_contract usa fail_if_body_not_matches_regexp com "Projeto Korp").
-  #  C3: o alvo é `http://nginx/...` (nome DNS na korp-net), NUNCA http://localhost/... —
+  # O alvo é `http://nginx/...` (nome DNS na korp-net), NUNCA http://localhost/... —
   # dentro do container do blackbox, localhost seria o próprio blackbox.
   - job_name: blackbox-http
     metrics_path: /probe

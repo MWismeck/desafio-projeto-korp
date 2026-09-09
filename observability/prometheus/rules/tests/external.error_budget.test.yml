@@ -5,7 +5,7 @@
 # POR QUE UM ARQUIVO SEPARADO de external.test.yml: a janela é de 30 d e `promtool test rules` avalia
 # TODOS os grupos a cada `evaluation_interval` até o maior `eval_time`. Com o `evaluation_interval: 1m`
 # de external.test.yml seriam 43.200 avaliações; aqui o passo é `6h` (121 avaliações) e as séries são
-# de 6 em 6 h — a receita de  para janelas longas. Os alertas externos seguem
+# de 6 em 6 h — a receita usual para janelas longas. Os alertas externos seguem
 # testados em external.test.yml.
 #
 # PROMETHEUS 3.x TEM RANGE SELECTOR ABERTO À ESQUERDA: `[30d]` cobre (t-30d, t] no 3.x e [t-30d, t] no
