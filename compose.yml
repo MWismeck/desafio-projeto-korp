@@ -20,7 +20,7 @@
 name: projeto-korp
 
 # Rotação de log em todo serviço: sem isto um container falando muito enche o disco do host e leva
-# junto Prometheus, Loki e o app (C7). O driver json-file é também o que o Alloy lê pela API do daemon.
+# junto Prometheus e o app. O json-file também é o driver que qualquer coletor de log lê pela API.
 x-logging: &default-logging
   driver: json-file
   options:

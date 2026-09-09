@@ -276,23 +276,10 @@
     | selectattr('labels.job', 'equalto', 'http-server-projeto-korp')
     | selectattr('health', 'equalto', 'up') | list | length > 0
 
-- name: Aguardar Tempo e Loki ficarem prontos (healthcheck do compose = /ready)
-  # tempo:3200/ready e loki:3100/ready só existem DENTRO da korp-net (os dois só têm `expose:`), por
-  # isso a prontidão é lida pelo healthcheck do próprio container em vez de um uri do host.
-  community.docker.docker_container_info:
-    name: "{{ item }}"
-  loop: "{{ monitoring_ready_containers_full }}"
-  register: monitoring_full_health
-  retries: "{{ monitoring_ready_retries }}"
-  delay: "{{ monitoring_ready_delay }}"
-  until: >-
-    monitoring_full_health.exists | default(false)
-    and (monitoring_full_health.container.State.Health.Status | default('sem healthcheck')) == 'healthy'
-  when: monitoring_profile_full | bool
 
-- name: Aguardar Tempo, Loki e Pyroscope aparecerem UP no Prometheus (perfil full)
-  # Dupla função: prova a prontidão do Pyroscope (sem healthcheck possível — a imagem 1.8.0 não tem
-  # shell) e prova que o scrape_full.yml foi carregado de fato pelo reload.
+- name: Aguardar os exporters do perfil estendido aparecerem UP no Prometheus
+  # Dupla função: prova que cada exporter responde ao scrape, e prova que o scrape_full.yml foi
+  # carregado de fato pelo reload — se o interruptor falhasse, nenhum destes alvos existiria.
   ansible.builtin.uri:
     url: "{{ monitoring_prometheus_url }}/api/v1/targets?state=active"
     return_content: true
@@ -308,7 +295,7 @@
 - name: Resumo do monitoramento provisionado
   ansible.builtin.debug:
     msg:
-      - "perfil: {{ (monitoring_profile_full | bool) | ternary('full (perfil estendido,)', 'padrão (perfil padrão, brief)') }}"
+      - "perfil: {{ (monitoring_profile_full | bool) | ternary('full (perfil estendido)', 'padrão (perfil padrão, brief)') }}"
       - "containers verificados: {{ monitoring_containers_expected | join(', ') }}"
       - "regras validadas: {{ monitoring_rule_names | join(', ') }}"
       - "testes de regra executados: {{ monitoring_rule_tests.matched }}"
