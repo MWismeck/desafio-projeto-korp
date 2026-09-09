@@ -21,13 +21,19 @@
     patterns: ["*.go", "go.mod", "go.sum", "Dockerfile"]
     recurse: true
     excludes: [".git", "vendor", ".agents"]
+    get_checksum: true
   register: app_sources
 
+# Hash de `path:checksum`, e nao do caminho sozinho: hashear so o caminho devolvia o MESMO valor
+# depois de editar um .go, entao `rebuild: never` preservava a imagem antiga e o ambiente passava a
+# servir codigo velho sem nenhum sinal. O par pega as tres mudancas que exigem rebuild: conteudo,
+# arquivo novo/removido e renomeacao.
 - name: Consolidar checksum dos fontes
   ansible.builtin.set_fact:
     app_sources_hash: >-
-      {{ app_sources.files | map(attribute='path') | sort
-         | map('ansible.builtin.hash', 'sha1') | join | hash('sha1') }}
+      {{ (app_sources.files | sort(attribute='path') | map(attribute='path') | list)
+         | zip(app_sources.files | sort(attribute='path') | map(attribute='checksum') | list)
+         | map('join', ':') | join('|') | hash('sha1') }}
 
 # docker_image_build e NAO docker_image: o primeiro chama `docker buildx`, o segundo constroi pela API
 # antiga do daemon, que nao entende `RUN --mount=type=cache` do Dockerfile e falha com "the --mount
