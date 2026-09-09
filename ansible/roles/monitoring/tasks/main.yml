@@ -295,7 +295,7 @@
 - name: Resumo do monitoramento provisionado
   ansible.builtin.debug:
     msg:
-      - "perfil: {{ (monitoring_profile_full | bool) | ternary('full (perfil estendido)', 'padrão (perfil padrão, brief)') }}"
+      - "perfil: {{ (monitoring_profile_full | bool) | ternary('full (com os exporters opcionais)', 'padrão (os quatro serviços do desafio)') }}"
       - "containers verificados: {{ monitoring_containers_expected | join(', ') }}"
       - "regras validadas: {{ monitoring_rule_names | join(', ') }}"
       - "testes de regra executados: {{ monitoring_rule_tests.matched }}"

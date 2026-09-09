@@ -69,7 +69,7 @@ sli:
     source:
       job: blackbox-http
       probe_module: korp_contract       # observability/blackbox/blackbox.yml
-      target: http://nginx/projeto-korp #  C3: nome DNS na korp-net, nunca localhost
+      target: http://nginx/projeto-korp # nome DNS na korp-net, nunca localhost
       probe_interval: 15s               # 4 sondas/min = 20 em 5 min, 240 em 1 h
       profile: full                     # blackbox-exporter vive em profiles:[full]
     notes: >-

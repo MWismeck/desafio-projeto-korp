@@ -4,7 +4,7 @@
 # Por que existe: `up`, `service_up` e o SLI de 5xx são medidos DENTRO da korp-net, direto no app. Nada
 # disso enxerga a borda: NGINX parado, `proxy_pass` errado, upstream 502, `location` removida, contrato
 # de  quebrado. O job `blackbox-http` sonda `http://nginx/projeto-korp` e `http://nginx/healthz`
-# (C3: nome DNS, nunca localhost) — é o caminho REAL do usuário de /.
+# pelo nome DNS do serviço, nunca localhost — é o caminho real do usuário.
 #
 # Nível `service:` = {service}; `service_probe:` = {service, probe}. SLO externo: mesma meta de
 # disponibilidade do SLO interno (99,9 %/30 d → budget 0.001), fatores de burn 14.4/6/1 (ALERTING §5).

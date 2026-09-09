@@ -1,9 +1,9 @@
 # observability/prometheus/rules/container.rules.yml — SAÚDE DE CONTAINER (cAdvisor).
-# Criado em 2026-09-06 pela decisão do Humano de adotar o "stack estendido" de observabilidade.
+# Métricas de container vêm do cAdvisor, que só existe no perfil `full` de observabilidade.
 #
 # Por que existe: `up`, `service_up` e o SLI de 5xx enxergam o processo VIVO. Eles não enxergam o
 # container sendo morto por OOM, reiniciando em laço, estrangulado pelo CFS ou encostando no limite de
-# memória — falhas que o brief não pede, mas que explicam a maioria dos 5xx/latência reais.
+# memória — falhas que o enunciado não pede, mas que explicam a maioria dos 5xx/latência reais.
 #
 # Fonte: cAdvisor (job `cadvisor`, perfil `full`). As séries do cAdvisor chegam com `service="cadvisor"`
 # (label do scrape), o que estragaria `group_by: [alertname, service]` do Alertmanager: TODO alerta de
@@ -11,7 +11,6 @@
 # `name` do container (label_replace) — no compose `container_name` == nome do serviço.
 # Nível `container:` = labels preservadas {name, service}.
 #
-# Padrões: /§5, /§3/§4, 
 # Testes: tests/container.test.yml — promtool test rules.
 groups:
   - name: korp.container.recording

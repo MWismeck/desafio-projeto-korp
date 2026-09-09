@@ -136,7 +136,7 @@ verde em `/targets`, com `lastError` vazio.
 ## ServiceUnavailable
 
 **Significado.** O próprio serviço reporta `service_up == 0` por 2 min (readiness falhou: dependência
-indisponível ou shutdown em curso) — sinal de disponibilidade exigido pelo brief.
+indisponível ou shutdown em curso) — sinal de disponibilidade exigido pelo desafio.
 
 **Impacto.** Requisições falham ou o NGINX devolve 502. SEV1 se persistente.
 
@@ -509,7 +509,7 @@ Curva **plana e alta** = dimensionamento apertado. Curva **subindo sem parar** =
 | 1 | curva subindo continuamente (vazamento) | capturar o perfil de heap **antes** de reiniciar (Pyroscope/`pprof`), depois `docker compose up -d --force-recreate http-server-projeto-korp` para ganhar tempo |
 | 2 | curva plana e alta (dimensionamento) | subir `mem_limit` e o `GOMEMLIMIT` proporcional; `docker compose up -d http-server-projeto-korp` |
 | 3 | começou depois de um deploy | rollback |
-| 4 | outro container do perfil `full` é o autor (Loki, Tempo, Prometheus) | reduzir retenção/limites daquele componente; nunca deixe o laboratório espremer o serviço do brief |
+| 4 | outro container do perfil `full` é o autor (Loki, Tempo, Prometheus) | reduzir retenção/limites daquele componente; nunca deixe o laboratório espremer o serviço do desafio |
 
 **Confirmar resolução.** `container:memory_working_set:ratio` abaixo de 0,85 por 10 min e a tendência de
 1 h horizontal ou descendente; nenhum evento novo em `container:oom_events:increase15m`.
@@ -527,7 +527,7 @@ carga sazonal; working set inflado por page cache de arquivo montado.
 cgroup do container — ele foi parado, removido, ou o cAdvisor perdeu acesso ao runtime.
 
 **Impacto.** Depende de **qual** container sumiu, e essa é a primeira pergunta:
-- `http-server-projeto-korp` ou `nginx` → o serviço do brief está fora; `TargetDown`,
+- `http-server-projeto-korp` ou `nginx` → o serviço do desafio está fora; `TargetDown`,
   `ServiceUnavailable` e `UserPathUnavailable` são o page real deste caso (por isso aqui é `warning`);
 - componente do perfil `full` (Tempo, Loki, Pyroscope) → perda de observabilidade, não de serviço;
 - **nenhum container sumiu de fato** → o problema é o cAdvisor, e toda a família de alertas de container

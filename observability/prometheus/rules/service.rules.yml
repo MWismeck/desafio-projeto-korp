@@ -1,6 +1,6 @@
 # observability/prometheus/rules/service.rules.yml — recording rules RED/SLI e alertas burn-rate do
-# http-server-projeto-korp. Padrões:  (level:metric:operations),,
-#  (99,9 %/30 d). Testes: tests/service.test.yml (promtool test rules). Gates:,,.
+# http-server-projeto-korp. Recording rules no formato nível:métrica:operação; SLO de 99,9 % em 30
+# dias. Testes: tests/service.test.yml.
 groups:
   - name: http-server-projeto-korp.recording
     rules:
@@ -42,7 +42,7 @@ groups:
       - record: service:sli_latency_good:ratio_rate30d
         expr: sum by (service) (rate(http_request_duration_seconds_bucket{service="http-server-projeto-korp",le="0.3"}[30d])) / clamp_min(sum by (service) (rate(http_request_duration_seconds_count{service="http-server-projeto-korp"}[30d])), 1e-9)
 
-  # CONVENÇÃO DE PREFIXO (fixada pelo Architect em 2026-09-06;  §"Limites, cardinalidade e
+  # Convenção de prefixo: `service:` para SLI cru, `slo:` para o que deriva dele (burn rate,
   # retenção";  nivel:metrica:operacao):
   #   `service:` = SLI CRU medido (razão bons/total, sem nenhum objetivo embutido);
   #   `slo:`     = ARTEFATO DERIVADO de um SLO (burn rate, error budget) — traz a constante do objetivo
