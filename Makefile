@@ -42,16 +42,22 @@ docker: ## imagem local
 	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t $(APP):$(VERSION)  .
 
 up: ## os quatro serviços do desafio (app + nginx + prometheus + grafana)
-	@rm -f observability/prometheus/scrape_full.yml
+	@rm -f observability/prometheus/scrape_full.yml observability/grafana/dashboards/korp-edge.json observability/grafana/dashboards/korp-container-health.json
 	VERSION=$(VERSION) docker compose up -d --build --wait
+	@docker compose kill -s SIGHUP prometheus >/dev/null 2>&1 || true
 
 up-full: ## + alertmanager, cadvisor, node-exporter, blackbox-exporter, nginx-exporter
 	@cp observability/prometheus/scrape_full.yml.disabled observability/prometheus/scrape_full.yml
+	@cp observability/grafana/dashboards/korp-edge.json.disabled observability/grafana/dashboards/korp-edge.json
+	@cp observability/grafana/dashboards/korp-container-health.json.disabled observability/grafana/dashboards/korp-container-health.json
 	VERSION=$(VERSION) docker compose --profile full up -d --build --wait
+	# subir o compose nao reinicia um container ja no ar: o Prometheus so passa a ver o scrape novo
+	# depois de reler a configuracao, e SIGHUP e o caminho nativo (sem depender de curl na imagem).
+	@docker compose kill -s SIGHUP prometheus >/dev/null 2>&1 || true
 
 down:
 	docker compose --profile full down -v --remove-orphans
-	@rm -f observability/prometheus/scrape_full.yml
+	@rm -f observability/prometheus/scrape_full.yml observability/grafana/dashboards/korp-edge.json observability/grafana/dashboards/korp-container-health.json
 
 logs:
 	docker compose logs -f --tail=100 $(APP) nginx

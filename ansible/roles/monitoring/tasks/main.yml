@@ -106,6 +106,22 @@
     - not (monitoring_scrape_active | bool)
   notify: Recarregar a configuração do Prometheus
 
+- name: Ativar os painéis do perfil estendido
+  ansible.builtin.copy:
+    src: "{{ monitoring_dashboards_dir }}/{{ item }}.disabled"
+    dest: "{{ monitoring_dashboards_dir }}/{{ item }}"
+    remote_src: true
+    mode: "0644"
+  loop: "{{ monitoring_dashboards_full }}"
+  when: monitoring_profile_full | bool
+
+- name: Retirar os painéis do perfil estendido (perfil padrão)
+  ansible.builtin.file:
+    path: "{{ monitoring_dashboards_dir }}/{{ item }}"
+    state: absent
+  loop: "{{ monitoring_dashboards_full }}"
+  when: not (monitoring_profile_full | bool)
+
 - name: Remover o arquivo parado após reativar o scrape do perfil full
   ansible.builtin.file:
     path: "{{ monitoring_scrape_full_disabled }}"

@@ -95,6 +95,9 @@ make up-full
 ansible-playbook -i ansible/inventory.ini ansible/playbook.yml -e '{"compose_profiles":["full"]}'
 ```
 
+No perfil padrão o Grafana mostra **um** dashboard, o do serviço, com todos os painéis preenchidos. Os
+dois painéis que leem estes exporters só são provisionados junto com eles, para nada abrir em branco.
+
 | Componente | Responde a pergunta |
 |---|---|
 | `blackbox-exporter` | o usuário consegue chegar ao serviço **agora**, atravessando o NGINX? |
