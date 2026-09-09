@@ -189,22 +189,22 @@ tests:
     alert_rule_test:
       - alertname: ContainerOOMKilled
         eval_time: 30m
-        exp_alerts:
+        exp_alerts: []
       - alertname: ContainerRestartLoop
         eval_time: 30m
-        exp_alerts:
+        exp_alerts: []
       - alertname: ServiceRestartLoop
         eval_time: 30m
-        exp_alerts:
+        exp_alerts: []
       - alertname: ContainerCPUThrottled
         eval_time: 30m
-        exp_alerts:
+        exp_alerts: []
       - alertname: ContainerMemoryNearLimit
         eval_time: 30m
-        exp_alerts:
+        exp_alerts: []
       - alertname: ContainerMissing
         eval_time: 30m
-        exp_alerts:
+        exp_alerts: []
 
   # ============================================================================================
   # Caso 3 (BORDA): container SEM limite de memória (container_spec_memory_limit_bytes = 0).
@@ -220,8 +220,8 @@ tests:
     promql_expr_test:
       - expr: container:memory_working_set:ratio
         eval_time: 20m
-        exp_samples:
+        exp_samples: []
     alert_rule_test:
       - alertname: ContainerMemoryNearLimit
         eval_time: 20m
-        exp_alerts:
+        exp_alerts: []

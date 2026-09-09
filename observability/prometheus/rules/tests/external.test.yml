@@ -52,7 +52,7 @@ tests:
       # sem violação de contrato neste cenário (a sonda nem chegou a comparar o corpo)
       - alertname: ServiceContractViolated
         eval_time: 5m
-        exp_alerts:
+        exp_alerts: []
 
   # ============================================================================================
   # Caso 2 (NEGATIVO decisivo): o APP caiu (service_up == 0) e por isso a sonda falha.
@@ -68,7 +68,7 @@ tests:
     alert_rule_test:
       - alertname: UserPathUnavailable
         eval_time: 5m
-        exp_alerts:
+        exp_alerts: []
 
   # ============================================================================================
   # Caso 3 (POSITIVO): HTTP 200 com corpo FORA do contrato de  — o módulo korp_contract
@@ -171,10 +171,10 @@ tests:
     alert_rule_test:
       - alertname: UserPathUnavailable
         eval_time: 65m
-        exp_alerts:
+        exp_alerts: []
       - alertname: ServiceContractViolated
         eval_time: 65m
-        exp_alerts:
+        exp_alerts: []
       - alertname: ServiceExternalAvailabilityBurn
         eval_time: 65m
-        exp_alerts:
+        exp_alerts: []

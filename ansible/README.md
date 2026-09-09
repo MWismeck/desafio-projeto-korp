@@ -23,8 +23,11 @@ O SDK Python `docker` (exigido por `community.docker.docker_network`/`docker_ima
 ## O comando único
 
 ```bash
-ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
+ansible-playbook -i ansible/inventory.ini ansible/playbook.yml -K
 ```
+
+O `-K` pede a senha do `sudo`: o playbook instala pacote e escreve em `/etc`. Omita se o usuário
+tiver `sudo` sem senha.
 
 Saída esperada: `PLAY RECAP` sem `failed`, e a task **"Exibir a resposta do serviço no console"** com
 `{"nome": "Projeto Korp", "horario": "<UTC>"}`. Se o seu usuário acabou de entrar no grupo

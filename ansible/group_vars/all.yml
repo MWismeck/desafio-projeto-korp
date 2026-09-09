@@ -12,8 +12,7 @@
 project_root: "{{ playbook_dir | dirname }}"
 
 # Perfis do compose — a chave da demonstração em duas etapas:
-#           perfil padrão, a ENTREGA: só os 4 serviços do brief (app + nginx + prometheus + grafana).
-#   ['full']  perfil estendido, o bônus: acrescenta alertmanager, otel-collector, tempo, loki, alloy, pyroscope,
-#             cadvisor, node-exporter, blackbox-exporter e nginx-exporter (nenhum publica porta).
+#   []       perfil padrão, a ENTREGA: só os 4 serviços do brief (app + nginx + prometheus + grafana).
+#   ['full']  perfil estendido, o bônus: acrescenta alertmanager, cadvisor, node-exporter, blackbox-exporter e nginx-exporter (nenhum publica porta).
 # Perfil estendido:  ansible-playbook -i ansible/inventory.ini ansible/playbook.yml -e compose_profiles='["full"]'
-compose_profiles:
+compose_profiles: []

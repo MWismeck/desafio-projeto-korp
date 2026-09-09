@@ -24,13 +24,16 @@ sobe os containers, configura o NGINX e o monitoramento, e no final faz a requis
 git clone https://github.com/MWismeck/desafio-projeto-korp.git
 cd desafio-projeto-korp
 ansible-galaxy collection install -r ansible/requirements.yml
-ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
+ansible-playbook -i ansible/inventory.ini ansible/playbook.yml -K
 ```
+
+O `-K` faz o Ansible pedir a senha do `sudo`. O playbook instala pacote e escreve em `/etc`, então
+precisa de elevação. Se o seu usuário tem `sudo` sem senha, pode omitir.
 
 Ao final, a última tarefa imprime o JSON do serviço. Rodar de novo termina com `changed=0`: o playbook é
 idempotente.
 
-**Pré-requisitos:** `ansible-core` 2.17 ou mais novo, e `sudo` no alvo. Para desenvolver, Go 1.25 (o `go.mod` fixa a toolchain em 1.25.14, que o Go baixa sozinho se você tiver uma versão anterior). No WSL2, o Docker precisa de
+**Pré-requisitos:** `ansible-core` 2.17 ou mais novo, e um usuário com `sudo` no alvo. Para desenvolver, Go 1.25 (o `go.mod` fixa a toolchain em 1.25.14, que o Go baixa sozinho se você tiver uma versão anterior). No WSL2, o Docker precisa de
 `systemd=true` em `/etc/wsl.conf` para que o serviço suba.
 
 ### Só o Compose, para desenvolver
