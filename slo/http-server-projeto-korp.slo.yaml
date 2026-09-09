@@ -3,14 +3,14 @@
 # observability/prometheus/rules/external.rules.yml (externo); dashboard slo-overview.
 #
 # =================================================================================================
-# POR QUE EXISTEM DOIS SLOs DE DISPONIBILIDADE (acrescentado em 2026-09-06 por)
+# POR QUE EXISTEM DOIS SLOs DE DISPONIBILIDADE
 # =================================================================================================
 # `availability` (INTERNO) mede o PROCESSO: razão de respostas sem 5xx em http_requests_total, coletado
 #   pelo Prometheus DIRETO na korp-net, na porta 8080 do app. Responde "o serviço está processando bem
 #   as requisições que CHEGAM até ele?".
 # `availability_external` (EXTERNO) mede o CAMINHO DO USUÁRIO: probe_success do blackbox-exporter
 #   sondando http://nginx/projeto-korp, ATRAVÉS do proxy reverso, com verificação do corpo.
-#   Responde "um cliente consegue ser atendido, agora, pelo caminho real de /?".
+#   Responde "um cliente consegue ser atendido, agora, pelo caminho real do serviço?".
 #
 # RELAÇÃO ENTRE OS DOIS — e por que um não substitui o outro:
 #   * O externo é SUPERCONJUNTO do interno em cobertura de falhas: acrescenta NGINX (container morto,
@@ -21,7 +21,7 @@
 #     pelo externo; NGINX fora aparece no externo e é INVISÍVEL para o interno.
 #   * É perfeitamente possível o INTERNO estar em 100 % e o EXTERNO em 0 %: app são, `up`=1,
 #     `service_up`=1, zero 5xx — e o usuário recebendo connection refused porque o NGINX caiu. Esse é
-#     exatamente o ponto cego que motivou o, e o alerta UserPathUnavailable existe para ele.
+#     exatamente o ponto cego que motivou o SLI externo, e o alerta UserPathUnavailable existe para ele.
 #   * O inverso também ocorre e é informativo: interno queimando com externo estável significa erro em
 #     rota que a sonda não cobre — a sonda vê só /projeto-korp e /healthz.
 #   * Os dois consomem orçamentos SEPARADOS. Não somar, não fazer média: são perguntas diferentes com
@@ -32,7 +32,7 @@
 #     contrato entre error budget e interrupção humana e não mudam por SLI.
 # =================================================================================================
 service: http-server-projeto-korp
-owner: sre            # a definir pelo Humano (time/pessoa responsável)
+owner: sre            # time/pessoa responsável pelo serviço
 description: Serviço HTTP do Desafio Korp — GET /projeto-korp atrás do NGINX.
 
 sli:

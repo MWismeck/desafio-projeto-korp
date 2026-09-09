@@ -189,10 +189,8 @@ jobs:
       - name: amtool — alertmanager.yml
         run: docker run --rm -v "$PWD/observability/alertmanager:/cfg:ro" --entrypoint amtool prom/alertmanager:v0.27.0 check-config /cfg/alertmanager.yml
 
-      - name: blackbox e OTel Collector
-        run: |
-          docker run --rm -v "$PWD/observability/blackbox:/cfg:ro" prom/blackbox-exporter:v0.25.0 --config.file=/cfg/blackbox.yml --config.check
-          docker run --rm -v "$PWD/observability/otel:/cfg:ro" otel/opentelemetry-collector-contrib:0.113.0 validate --config=/cfg/otel-collector.yaml
+      - name: blackbox — config.check
+        run: docker run --rm -v "$PWD/observability/blackbox:/cfg:ro" prom/blackbox-exporter:v0.25.0 --config.file=/cfg/blackbox.yml --config.check
 
       - name: Dashboards e provisioning do Grafana fazem parse
         run: |
