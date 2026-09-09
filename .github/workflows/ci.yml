@@ -37,7 +37,12 @@ jobs:
         run: |
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6
           go install github.com/securego/gosec/v2/cmd/gosec@v2.22.0
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          # versao fixada, e nao @latest: a v1.8.0 exige Go >= 1.26 para compilar, e este job roda com
+          # GOTOOLCHAIN=local, ou seja, a toolchain declarada no go.mod (1.25) — com @latest o passo
+          # falha na INSTALACAO, antes de analisar uma linha. A v1.7.0 e a ultima que compila com 1.25.
+          # Nao voltar mais: a v1.1.4 instala, mas foi compilada com Go 1.24 e recusa analisar
+          # pacotes 1.25 ("package requires newer Go version"). Ao subir a toolchain, subir este pin.
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
           go install github.com/swaggo/swag/cmd/swag@v1.16.4
 
       - name: Build estático (é o binário que vai para a imagem)
@@ -170,9 +175,16 @@ jobs:
       - name: promtool — config, regras (lint estrito) e testes unitários
         run: |
           P="$PWD/observability/prometheus"
-          docker run --rm -v "$P:/cfg:ro" --entrypoint promtool prom/prometheus:v3.5.0 check config /cfg/prometheus.yml
-          docker run --rm -v "$P:/cfg:ro" --entrypoint promtool prom/prometheus:v3.5.0 check rules --lint=all --lint-fatal /cfg/rules/*.rules.yml
-          docker run --rm -v "$P:/cfg:ro" --entrypoint promtool prom/prometheus:v3.5.0 test rules /cfg/rules/tests/*.test.yml
+          # O glob precisa ser expandido DENTRO do container: /cfg so existe la. Passado direto ao
+          # promtool, o shell do runner tenta expandir /cfg/rules/*.rules.yml contra o proprio disco,
+          # nao encontra nada, entrega o padrao literal e o promtool morre com "path does not exist".
+          # Por isso --entrypoint sh -c em vez de --entrypoint promtool.
+          run_promtool() {
+            docker run --rm -v "$P:/cfg:ro" --entrypoint sh prom/prometheus:v3.5.0 -c "$1"
+          }
+          run_promtool 'promtool check config /cfg/prometheus.yml'
+          run_promtool 'promtool check rules --lint=all --lint-fatal /cfg/rules/*.rules.yml'
+          run_promtool 'promtool test rules /cfg/rules/tests/*.test.yml'
 
       - name: amtool — alertmanager.yml
         run: docker run --rm -v "$PWD/observability/alertmanager:/cfg:ro" --entrypoint amtool prom/alertmanager:v0.27.0 check-config /cfg/alertmanager.yml
