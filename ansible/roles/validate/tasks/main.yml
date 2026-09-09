@@ -53,13 +53,15 @@
     name: korp-net
   register: validate_net_info
 
+# .values() com parenteses: sem eles o Jinja devolve o METODO do dicionario, nao os valores, e o
+# erro sai como "'method' object is not iterable" na renderizacao do fail_msg.
 - name: Validar membros da rede
   ansible.builtin.assert:
     that: validate_net_members | intersect(['http-server-projeto-korp', 'nginx']) | length == 2
     fail_msg: "app e/ou nginx fora da rede korp-net (membros: {{ validate_net_members | join(', ') }})"
   vars:
     validate_net_members: >-
-      {{ validate_net_info.network.Containers.values | map(attribute='Name') | list }}
+      {{ (validate_net_info.network.Containers | default({})).values() | map(attribute='Name') | list }}
 
 # =====================================================================================
 # Perfil `full` — a sonda externa enxerga o serviço ATRAVÉS do NGINX?
