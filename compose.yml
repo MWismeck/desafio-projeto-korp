@@ -371,8 +371,14 @@ services:
 
 networks:
   korp-net:
-    name: korp-net          # rede bridge nomeada (o Ansible cria a mesma rede de forma idempotente)
-    driver: bridge
+    # external: a rede e um recurso PROPRIO, criado antes do compose — e o que o desafio pede
+    # ("crie uma rede bridge" e depois "conectado a rede criada"). Sem isto o compose recusa uma rede
+    # que ele mesmo nao criou: "network korp-net was found but has incorrect label
+    # com.docker.compose.network". Quem cria: a role `network` do Ansible, ou o alvo `up` do Makefile.
+    #   docker network create --driver bridge korp-net
+    external: true
+    name: korp-net
+    # driver: bridge  <- declarado por quem cria a rede; o compose apenas a consome
 
 volumes:
   prometheus-data:

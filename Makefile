@@ -42,11 +42,13 @@ docker: ## imagem local
 	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t $(APP):$(VERSION)  .
 
 up: ## os quatro serviços do desafio (app + nginx + prometheus + grafana)
+	@docker network inspect korp-net >/dev/null 2>&1 || docker network create --driver bridge korp-net
 	@rm -f observability/prometheus/scrape_full.yml observability/grafana/dashboards/korp-edge.json observability/grafana/dashboards/korp-container-health.json
 	VERSION=$(VERSION) docker compose up -d --build --wait
 	@docker compose kill -s SIGHUP prometheus >/dev/null 2>&1 || true
 
 up-full: ## + alertmanager, cadvisor, node-exporter, blackbox-exporter, nginx-exporter
+	@docker network inspect korp-net >/dev/null 2>&1 || docker network create --driver bridge korp-net
 	@cp observability/prometheus/scrape_full.yml.disabled observability/prometheus/scrape_full.yml
 	@cp observability/grafana/dashboards/korp-edge.json.disabled observability/grafana/dashboards/korp-edge.json
 	@cp observability/grafana/dashboards/korp-container-health.json.disabled observability/grafana/dashboards/korp-container-health.json
