@@ -11,7 +11,11 @@ providers:
     folder: Projeto Korp
     folderUid: korp                 # estável: usado por links e pela API /api/search?folderUIDs=korp
     type: file
-    disableDeletion: true           # apagar dashboard = apagar o arquivo + PR, nunca pela UI
+    # false de proposito: o provisionamento e autoritativo nos DOIS sentidos. Com true, um painel
+    # continuaria no banco depois de o arquivo sair do diretorio, e os paineis do perfil estendido
+    # ficariam visiveis (e vazios) ao voltar para o perfil padrao. A protecao contra edicao pela UI
+    # e o allowUiUpdates abaixo, nao esta chave.
+    disableDeletion: false
     allowUiUpdates: false           # edição na UI não sobrescreve o arquivo versionado
     updateIntervalSeconds: 30       # relê o diretório; mudança no JSON aparece sem restart
     options:

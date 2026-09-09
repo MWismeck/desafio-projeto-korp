@@ -100,3 +100,7 @@ __pycache__/
 # senao o /targets abre com alvos vermelhos de containers que nem existem. Quem ativa e o `make up-full`
 # ou a role monitoring do Ansible, produzindo este arquivo em tempo de execucao.
 observability/prometheus/scrape_full.yml
+# Mesma razao para os dois paineis que leem exporters do perfil estendido: no perfil padrao esses
+# containers nao existem e o painel abriria em branco, o que parece defeito e nao e.
+observability/grafana/dashboards/korp-edge.json
+observability/grafana/dashboards/korp-container-health.json

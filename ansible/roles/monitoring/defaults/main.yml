@@ -25,6 +25,14 @@ monitoring_grafana_url: http://localhost:3000
 monitoring_scrape_full: "{{ monitoring_prometheus_dir }}/scrape_full.yml"
 monitoring_scrape_full_disabled: "{{ monitoring_prometheus_dir }}/scrape_full.yml.disabled"
 
+# Paineis que leem exporters do perfil estendido. No perfil padrao esses containers nao existem e o
+# painel abriria em branco na frente de quem avalia — parece defeito e nao e. Mesmo interruptor do
+# scrape: o versionado e o `.disabled`, e o perfil decide se vira `.json`.
+monitoring_dashboards_dir: "{{ project_root }}/observability/grafana/dashboards"
+monitoring_dashboards_full:
+  - korp-edge.json
+  - korp-container-health.json
+
 # Configuração exigida no perfil PADRÃO (os 4 serviços do brief). Caminhos relativos a project_root.
 monitoring_required_files:
   - observability/prometheus/prometheus.yml
