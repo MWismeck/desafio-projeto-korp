@@ -3,7 +3,7 @@
 #
 # Por que existe: `up`, `service_up` e o SLI de 5xx são medidos DENTRO da korp-net, direto no app. Nada
 # disso enxerga a borda: NGINX parado, `proxy_pass` errado, upstream 502, `location` removida, contrato
-# de  quebrado. O job `blackbox-http` sonda `http://nginx/projeto-korp` e `http://nginx/healthz`
+# da API quebrado. O job `blackbox-http` sonda `http://nginx/projeto-korp` e `http://nginx/healthz`
 # pelo nome DNS do serviço, nunca localhost — é o caminho real do usuário.
 #
 # Nível `service:` = {service}; `service_probe:` = {service, probe}. SLO externo: mesma meta de
@@ -30,8 +30,7 @@ groups:
         expr: avg by (service) (avg_over_time(probe_success{job="blackbox-http",probe="contrato"}[3d]))
 
       # janela do error budget (30 d): existe só para alimentar `slo:external_availability:
-      # error_budget_remaining_ratio30d` do grupo seguinte. Prefixo `service:` porque é SLI CRU
-      #.
+      # error_budget_remaining_ratio30d` do grupo seguinte. Prefixo `service:` porque é SLI CRU.
       - record: service:sli_availability_external:ratio_avg30d
         expr: avg by (service) (avg_over_time(probe_success{job="blackbox-http",probe="contrato"}[30d]))
 
@@ -92,7 +91,7 @@ groups:
           runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#userpathunavailable"
           dashboard_url: "http://localhost:3000/d/korp-edge"
 
-      # ---------- Contrato de  violado (corpo não bate com a regex do módulo korp_contract) ----------
+      # ---------- Contrato da API violado (corpo não bate com a regex do módulo korp_contract) ----------
       - alert: ServiceContractViolated
         expr: probe_failed_due_to_regex{job="blackbox-http"} == 1
         for: 1m

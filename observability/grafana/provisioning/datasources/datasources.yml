@@ -1,4 +1,4 @@
-# observability/grafana/provisioning/datasources/datasources.yml — bônus  (Grafana provisionado por arquivo).
+# observability/grafana/provisioning/datasources/datasources.yml — bônus: Grafana provisionado por arquivo.
 #
 # três pilares CORRELACIONADOS (métrica -> trace -> log -> perfil).
 #

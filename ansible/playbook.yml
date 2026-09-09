@@ -6,7 +6,7 @@
 #   Perfil padrão — o comando acima, sem flag nenhuma: sobe EXATAMENTE os 4 serviços do desafio
 #           (http-server-projeto-korp, nginx, prometheus, grafana) e o /targets abre 100 % verde.
 #   Perfil estendido — o mesmo comando com `-e compose_profiles='["full"]'`: acrescenta o stack estendido de
-#           observabilidade (10 containers) e as verificações que só fazem sentido com ele no ar.
+#           observabilidade (5 containers a mais, 9 no total) e as verificações que só fazem sentido com ele no ar.
 # O perfil padrão é a entrega; o perfil estendido é o bônus. Nada do perfil estendido pode ser pré-requisito do perfil padrão.
 ---
 - name: Provisionar o ambiente do http-server-projeto-korp
@@ -44,15 +44,15 @@
       tags: [always]
 
   roles:
-    - role: docker       #  /  — instala e habilita o Docker Engine + compose plugin
+    - role: docker       # instala e habilita o Docker Engine + plugin compose
       tags: [docker]
-    - role: network      #  /  — rede bridge korp-net
+    - role: network      # rede bridge korp-net
       tags: [network]
-    - role: app          #  /  — build da imagem e docker compose up
+    - role: app          # build da imagem e docker compose up
       tags: [app]
-    - role: nginx        #  — http-server-projeto-korp.conf (proxy reverso) + reload
+    - role: nginx        # http-server-projeto-korp.conf (proxy reverso) + reload
       tags: [nginx]
-    - role: monitoring   #  — Prometheus/Grafana configurados e no ar (+ perfil full,)
+    - role: monitoring   # Prometheus/Grafana configurados e no ar
       tags: [monitoring]
-    - role: validate     #  — requisição HTTP e resposta no console
+    - role: validate     # requisição HTTP e resposta no console
       tags: [validate]

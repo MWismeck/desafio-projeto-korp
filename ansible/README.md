@@ -105,22 +105,22 @@ ansible-playbook -i ansible/inventory.ini ansible/playbook.yml --list-tasks     
 | Variável | Default | Uso |
 |---|---|---|
 | `app_version` | `dev` | tag da imagem / `build_info{version}` |
-| `compose_profiles` | `` | `['full']` = perfil estendido: alertmanager, otel-collector, tempo, loki, alloy, pyroscope, cadvisor, node-exporter, blackbox-exporter, nginx-exporter |
+| `compose_profiles` | `` | `['full']` = perfil estendido: alertmanager, cadvisor, node-exporter, blackbox-exporter, nginx-exporter |
 | `project_root` | `<raiz do repo>` | onde estão `compose.yml`, `Dockerfile`, `nginx/`, `observability/` |
 | `docker_users` | usuário do sudo | quem entra no grupo `docker` |
 | `monitoring_promtool_image` | `prom/prometheus:v3.5.0` | imagem usada para `promtool check/test` (nada é instalado no alvo) |
 | `nginx_network` | `korp-net` | rede usada no `nginx -t`; sem ela o teste falha em "host not found in upstream" |
 
-## Mapa role → requisito do desafio
+## Mapa role → o que entrega
 
-| Role | Requisitos |
+| Role | Entrega |
 |---|---|
-| `docker` |,  |
-| `network` |,  |
-| `app` | /08,..14,,  |
-| `nginx` |..20,  (+ `stub_status.conf` no perfil `full`,) |
-| `monitoring` |..29,,  (bônus) |
-| `validate` |,,, /16 (+ `probe_success` no perfil `full`) |
+| `docker` | Docker Engine, CLI, containerd e os plugins buildx/compose; usuários no grupo `docker` |
+| `network` | rede bridge `korp-net`, criada fora do compose (que a consome como `external`) |
+| `app` | build da imagem `http-server-projeto-korp` e subida dos containers do perfil ativo |
+| `nginx` | `http-server-projeto-korp.conf` (proxy `:80` → `:8080`) e, no perfil `full`, `stub_status.conf` |
+| `monitoring` | Prometheus e Grafana provisionados por arquivo, com `promtool check/test` nas regras |
+| `validate` | teste de aceite `GET /projeto-korp` pelo NGINX e, no perfil `full`, `probe_success` |
 
 ## O que cada role valida (além de configurar)
 
@@ -130,8 +130,7 @@ ansible-playbook -i ansible/inventory.ini ansible/playbook.yml --list-tasks     
 - `monitoring`: `promtool check config`, `promtool check rules` em **todos** os `rules/*.rules.yml`
   encontrados (lista vinda de `find`, não fixa) e `promtool test rules` em todos os
   `rules/tests/*.test.yml`; containers do perfil ativo em execução; Prometheus e Grafana prontos;
-  target do serviço UP; no perfil `full`, Tempo e Loki `healthy` (healthcheck = `/ready`) e
-  Tempo/Loki/Pyroscope UP no Prometheus.
+  target do serviço UP.
 - `validate`: `uri` + `assert` + `debug` do JSON e, no perfil `full`, `probe_success=1` na
   sonda `korp_contract` do blackbox — a única verificação contínua que atravessa o NGINX.
 

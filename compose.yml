@@ -1,6 +1,6 @@
 # compose.yml — Desafio Korp.
 #
-# PERFIL PADRÃO (o que o enunciado exige, e nada além —  /  C2):
+# PERFIL PADRÃO (o que o enunciado exige, e nada além):
 #   http-server-projeto-korp (sem ports) · nginx (80:80) · prometheus (9090) · grafana (3000)
 #
 # PERFIL `full` — observabilidade opcional, nada dele é exigido pelo desafio:
@@ -9,13 +9,13 @@
 #   blackbox-exporter · nginx-exporter — TODOS sem `ports:` (apenas `expose:`): o perfil `full` é
 #   laboratório e não pode ampliar a superfície publicada no host.
 #
-# LIMITES DE RECURSO (correção 2026-09-06, achado F5): TODO serviço declara `cpus` e `mem_limit`.
+# LIMITES DE RECURSO: TODO serviço declara `cpus` e `mem_limit`.
 # POR QUE isso não é cosmético: sem limite, o cgroup do container não tem teto e o cAdvisor exporta
 # `container_spec_memory_limit_bytes = 0` — a razão de saturação (uso/limite) vira +Inf, o painel USE
 # fica inútil e o CFS nunca faz throttling, então `container_cpu_cfs_throttled_seconds_total` fica
 # permanentemente em zero. Limite declarado é PRÉ-REQUISITO da métrica de saturação, não enfeite.
 #
-# Imagens: sempre tag explícita (`:latest` proibido,  C4) com o comentário
+# Imagens: sempre tag explícita (`:latest` proibido) com o comentário
 # `# pinar:` acima — troque a tag pelo digest antes de publicar.
 name: projeto-korp
 
@@ -54,7 +54,8 @@ services:
       # cpus: "0.5" → ceil(0.5) = 1. Go < 1.25 não lê a quota do cgroup e assumiria todos os cores do
       # host: mais Ps que a quota permite = throttling do CFS e latência de cauda pior sem motivo.
       GOMAXPROCS: ${GOMAXPROCS:-1}
-      # Tracing desligado no perfil padrão: sem Collector no ar, SDK ligado só
+      # Tracing desligado no perfil padrão: sem Collector no ar, um SDK ligado só gastaria
+      # CPU e memória exportando spans para lugar nenhum.
     networks:
       - korp-net
     restart: unless-stopped
@@ -85,12 +86,12 @@ services:
     expose:
       - "8081"                                    # stub_status, só dentro de korp-net (ver nginx/conf.d/stub_status.conf)
     volumes:
-      - ./nginx/conf.d:/etc/nginx/conf.d:ro       # / (http-server-projeto-korp.conf + stub_status.conf)
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro       # diretório todo (http-server-projeto-korp.conf + stub_status.conf)
     depends_on:
       http-server-projeto-korp:
         condition: service_healthy                # subir o proxy antes do upstream só produz 502 na demo
     networks:
-      - korp-net                                  # 
+      - korp-net
     restart: unless-stopped
     cpus: "0.5"
     mem_limit: 128m
@@ -103,7 +104,7 @@ services:
     logging: *default-logging
 
   prometheus:
-    # 3.x conforme; regras e testes validados em v2.55.1 e v3.5.0 (2026-09-06).
+    # Regras e testes validados em v2.55.1 e v3.5.0 (2026-09-06).
     # Atencao ao 3.x: range selector aberto a esquerda muda rate/increase na borda da janela.
     image: prom/prometheus:v3.5.0@sha256:63805ebb8d2b3920190daf1cb14a60871b16fd38bed42b857a3182bc621f4996
     container_name: prometheus
@@ -115,8 +116,6 @@ services:
       - --storage.tsdb.retention.time=45d
       - --storage.tsdb.retention.size=2GB
       - --web.enable-lifecycle
-      # connector spanmetrics — e o pulo "gráfico de latência → trace no Tempo" simplesmente não
-      # existe. Custo: alguns MB de RAM em um buffer circular. É o que liga métrica a trace.
     volumes:
       # DIRETORIO, nao arquivo: o perfil estendido da demo liga os jobs do perfil `full`
       # colocando/retirando o `scrape_full.yml`, que o `prometheus.yml` carrega por
@@ -152,7 +151,7 @@ services:
       # traceToLogs/traceToProfiles e o painel de flamegraph dependem destas features nas 11.x.
       GF_FEATURE_TOGGLES_ENABLE: ${GF_FEATURE_TOGGLES_ENABLE:-traceToProfiles,traceqlEditor}
     volumes:
-      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro   # bônus 
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro   # provisionamento como código
       - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
       - grafana-data:/var/lib/grafana
     ports:
@@ -222,7 +221,7 @@ services:
     #   3. Todos os mounts do host são :ro; o container não expõe porta no host; não recebe tráfego
     #      externo, só é raspado de dentro de korp-net.
     #   4. A alternativa (métricas de container vindas do próprio daemon) não existe de forma
-    #      padronizada; sem cAdvisor não há USE de container — que é justamente o que F5 habilita.
+    #      padronizada; sem cAdvisor não há USE de container.
     # Se um dia isto sair do laboratório: trocar por cAdvisor sem privileged com CAP_SYS_ADMIN
     # granular, ou pelas métricas do runtime, e registrar em ADR próprio.
     # ------------------------------------------------------------------------------------------

@@ -77,7 +77,7 @@ podem falhar.
 
 ## 3. Parte 1 — Serviço e arquitetura do ambiente
 
-### 3.1 Serviço HTTP em Go (a)
+### 3.1 Serviço HTTP em Go
 
 | Pergunta | Resposta |
 |---|---|
@@ -115,7 +115,7 @@ Rede `korp-net`, bridge, declarada com `name:` fixo no Compose e criada pela rol
 nome. O app é alcançado pelo nome DNS `http-server-projeto-korp`, nunca por IP. Armadilha evitada: dentro
 do container do NGINX, `localhost` é o próprio NGINX, então o `proxy_pass` usa o nome do serviço.
 
-### 3.5 Docker Compose — app + nginx (a)
+### 3.5 Docker Compose — app + nginx
 
 | Pergunta | Resposta |
 |---|---|
@@ -125,7 +125,7 @@ do container do NGINX, `localhost` é o próprio NGINX, então o `proxy_pass` us
 | Trade-offs | `read_only` impede `apk add` dentro do container em execução; instalar ferramenta exige subir o container sem essa flag, de propósito. |
 | Como validar | `docker compose config -q` nos dois perfis; `docker compose ps` mostra só `80`, `9090` e `3000` publicados. |
 
-### 3.6 NGINX — proxy reverso (a)
+### 3.6 NGINX — proxy reverso
 
 Arquivo `nginx/conf.d/http-server-projeto-korp.conf`, com o nome exigido, montado somente leitura.
 `upstream` apontando para `http-server-projeto-korp:8080`, cabeçalhos `X-Forwarded-*`, timeouts
@@ -143,7 +143,7 @@ exibe a resposta no console ao fim do playbook.
 
 ## 4. Parte 2 — Monitoramento e observabilidade
 
-### 4.1 Métricas obrigatórias: disponibilidade e volume (a)
+### 4.1 Métricas obrigatórias: disponibilidade e volume
 
 | Pergunta | Resposta |
 |---|---|
@@ -159,7 +159,7 @@ com a convenção `nível:métrica:operação`, SLO de disponibilidade e latênc
 em múltiplas janelas, e testes unitários das regras com `promtool test rules`, executados no CI. Retenção
 de 45 dias, porque a janela do orçamento de erro é de 30 e reter menos tornaria o painel mentiroso.
 
-### 4.3 Grafana e dashboard (,,; bônus)
+### 4.3 Grafana e dashboard (bônus)
 
 Datasources e dashboards provisionados por arquivo, sem clique. Dashboard `http-server-projeto-korp` com
 disponibilidade, volume, erro e latência, mais `korp-container-health` (saúde de container e host) e
