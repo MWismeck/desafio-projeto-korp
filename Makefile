@@ -15,8 +15,8 @@ help: ## lista os alvos
 build: ## binário local com versão injetada
 	CGO_ENABLED=0 go build -trimpath -ldflags "$(LDFLAGS)" -o bin/$(APP) ./cmd/$(APP)
 
-run: build ## roda o binário local na porta do.env.example
-	
+run: build ## roda o binário local com as variáveis do .env.example
+	set -a && . ./.env.example && set +a && ./bin/$(APP)
 
 test: ## testes com detector de corrida e cobertura
 	go test -race -shuffle=on -count=1 -coverpkg=./internal/... -coverprofile=coverage.out ./...
@@ -39,7 +39,7 @@ swagger-check: swagger ## falha se api/ estiver desatualizada (mesmo check do CI
 check: lint test sec swagger-check promtool-test ## tudo que o CI verifica, localmente
 
 docker: ## imagem local
-	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t $(APP):$(VERSION)  .
+	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) -t $(APP):$(VERSION) .
 
 up: ## os quatro serviços do desafio (app + nginx + prometheus + grafana)
 	@docker network inspect korp-net >/dev/null 2>&1 || docker network create --driver bridge korp-net
