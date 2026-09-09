@@ -2,7 +2,7 @@
   "id": null,
   "uid": "korp-container-health",
   "title": "Korp · Saúde de container e host (USE)",
-  "description": "Utilização, Saturação e Erros (método USE) da camada de infraestrutura do Desafio Korp: cAdvisor por container e node-exporter no host. Responde 'o serviço está lento/reiniciando por culpa do código ou do limite do container?'. Criado em 2026-09-06. Runbooks: .agents/runbooks/ALERT_RUNBOOKS.md",
+  "description": "Utilização, Saturação e Erros (método USE) da camada de infraestrutura do Desafio Korp: cAdvisor por container e node-exporter no host. Responde 'o serviço está lento/reiniciando por culpa do código ou do limite do container?'. Criado em 2026-09-06. Runbooks: docs/runbooks/ALERT_RUNBOOKS.md",
   "tags": [
     "korp",
     "use",

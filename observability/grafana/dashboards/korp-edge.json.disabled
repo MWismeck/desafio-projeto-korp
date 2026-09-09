@@ -2,7 +2,7 @@
   "id": null,
   "uid": "korp-edge",
   "title": "Korp · Borda e caminho do usuário",
-  "description": "O que o USUÁRIO vê: sonda externa (blackbox-exporter) atravessando o NGINX até /projeto-korp, decomposição do tempo por fase da requisição, status HTTP observado de fora e o estado das conexões do NGINX. Responde 'o serviço está bem por dentro mas ruim por fora?'. Criado em 2026-09-06. Runbooks: .agents/runbooks/ALERT_RUNBOOKS.md",
+  "description": "O que o USUÁRIO vê: sonda externa (blackbox-exporter) atravessando o NGINX até /projeto-korp, decomposição do tempo por fase da requisição, status HTTP observado de fora e o estado das conexões do NGINX. Responde 'o serviço está bem por dentro mas ruim por fora?'. Criado em 2026-09-06. Runbooks: docs/runbooks/ALERT_RUNBOOKS.md",
   "tags": ["korp", "edge", "nginx", "blackbox", "ux"],
   "timezone": "utc",
   "editable": false,

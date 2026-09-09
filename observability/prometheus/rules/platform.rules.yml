@@ -8,7 +8,7 @@
 #   3. host: disco previsto para acabar (predict_linear), a falha mais previsível que existe.
 #
 # Alvos: só o job `prometheus` existe no perfil PADRÃO. Todos os demais (nginx-exporter, node,
-# alertmanager, otel-collector) vivem no perfil `full` e são declarados em `../scrape_full.yml`,
+# alertmanager) vivem no perfil `full` e são declarados em `../scrape_full.yml`,
 # arquivo que a role do Ansible só copia quando `compose_profiles` inclui `full`.
 # No perfil padrão da demo as séries simplesmente não existem e estes alertas ficam calados — é o desenho.
 # Testes: tests/platform.test.yml — promtool test rules.
