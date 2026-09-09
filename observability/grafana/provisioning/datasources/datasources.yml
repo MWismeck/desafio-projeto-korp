@@ -15,7 +15,7 @@
 apiVersion: 1
 
 # Renomeou/aposentou uma datasource? Declare aqui — o provisioning não remove sozinho.
-deleteDatasources: 
+deleteDatasources: []
 
 datasources:
   # --------------------------------------------------------------------------- MÉTRICAS (pilar 1)
