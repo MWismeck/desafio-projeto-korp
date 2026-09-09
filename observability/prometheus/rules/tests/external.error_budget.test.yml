@@ -1,6 +1,6 @@
 # observability/prometheus/rules/tests/external.error_budget.test.yml — teste da recording rule
 # `slo:external_availability:error_budget_remaining_ratio30d` e do SLI de 30 d que a alimenta
-# (grupos http-server-projeto-korp.external.recording / .external.slo).
+# (grupos http-server-projeto-korp.external.recording e .external.slo).
 #
 # POR QUE UM ARQUIVO SEPARADO de external.test.yml: a janela é de 30 d e `promtool test rules` avalia
 # TODOS os grupos a cada `evaluation_interval` até o maior `eval_time`. Com o `evaluation_interval: 1m`

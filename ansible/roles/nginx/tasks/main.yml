@@ -7,7 +7,7 @@
 # não existe passo de cópia para dentro do container, e o `include /etc/nginx/conf.d/*.conf` do
 # nginx.conf da imagem oficial o carrega no próximo reload. Esta role, portanto, CONFERE a presença do
 # arquivo versionado, valida o diretório inteiro e prova que a 8081 responde — sem reescrever nada
-# além do conf canônico.  preservado: proxy reverso e stub_status são server blocks separados,
+# além do conf canônico: proxy reverso e stub_status são server blocks separados,
 # em arquivos separados, em portas separadas (80 e 8081).
 ---
 - name: Garantir o diretório nginx/conf.d no projeto (volume montado em /etc/nginx/conf.d)

@@ -1,9 +1,9 @@
 # ansible/playbook.yml — provisiona TODO o ambiente do Desafio Korp com um único comando:
 #   ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
-# Ordem das roles = ordem do brief. Idempotente: a 2ª execução termina com changed=0.
+# Ordem das roles = ordem do desafio. Idempotente: a 2ª execução termina com changed=0.
 #
 # DEMO EM DOIS ATOS:
-#   Perfil padrão — o comando acima, sem flag nenhuma: sobe EXATAMENTE os 4 serviços do brief
+#   Perfil padrão — o comando acima, sem flag nenhuma: sobe EXATAMENTE os 4 serviços do desafio
 #           (http-server-projeto-korp, nginx, prometheus, grafana) e o /targets abre 100 % verde.
 #   Perfil estendido — o mesmo comando com `-e compose_profiles='["full"]'`: acrescenta o stack estendido de
 #           observabilidade (10 containers) e as verificações que só fazem sentido com ele no ar.

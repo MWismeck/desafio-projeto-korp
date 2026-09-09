@@ -14,11 +14,11 @@ import (
 // ProjectName is the fixed value of the "nome" field; accent and capitalization are part of the contract.
 const ProjectName = "Projeto Korp"
 
-// ContentTypeJSON is sent on every successful JSON response.
+// ContentTypeJSON carries the charset because some clients guess latin-1 without it.
 const ContentTypeJSON = "application/json; charset=utf-8"
 
-// ProjetoKorpResponse is the JSON contract of GET /projeto-korp (REQ-05); the field names are
-// fixed by the brief, so they stay in Portuguese.
+// ProjetoKorpResponse is the JSON contract of GET /projeto-korp; the field names are fixed by the
+// challenge, so they stay in Portuguese.
 type ProjetoKorpResponse struct {
 	Nome    string `json:"nome" example:"Projeto Korp"`
 	Horario string `json:"horario" example:"2026-09-07T12:00:00Z"`
@@ -35,8 +35,8 @@ func NewProjetoKorp(now func() time.Time, log *slog.Logger) *ProjetoKorp {
 	return &ProjetoKorp{now: now, log: log}
 }
 
-// ServeHTTP resolves the clock inside the request, never at construction, so every call sees the
-// current UTC time (REQ-06).
+// ServeHTTP resolves the clock inside the request, never at construction: the challenge requires a
+// fresh UTC timestamp on every call.
 //
 // @Summary      Project name and current UTC time
 // @Description  Returns the project name and the current time in UTC (RFC 3339), resolved on every request.

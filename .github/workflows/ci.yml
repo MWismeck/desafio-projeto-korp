@@ -112,7 +112,7 @@ jobs:
           docker compose config -q
           docker compose --profile full config -q
 
-      - name: Smoke — sobe o mínimo do brief e chama pelo NGINX
+      - name: Smoke — sobe o ambiente e chama o serviço pelo NGINX
         run: |
           cp.env.example.env
           VERSION=ci docker compose up -d --wait --wait-timeout 90
@@ -180,7 +180,7 @@ jobs:
       - name: ansible-lint (perfil production)
         run: ansible-lint --profile production ansible/playbook.yml
 
-      - name: syntax-check do comando único do brief
+      - name: syntax-check do comando único de provisionamento
         run: ansible-playbook -i ansible/inventory.ini --syntax-check ansible/playbook.yml
 
   workflows:

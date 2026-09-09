@@ -7,7 +7,7 @@ validate_retries: 10
 validate_delay: 3
 validate_profile_full: "{{ 'full' in (compose_profiles | default) }}"
 
-# Consulta ao Prometheus pela sonda externa do blackbox (perfil `full`,). O ponto cego que o
+# Consulta ao Prometheus pela sonda externa do blackbox (perfil `full`). O ponto cego que o
 # ADR fecha: `up`, `service_up` e `/healthz` observam o processo POR DENTRO e podem estar todos verdes
 # com o `curl http://localhost/projeto-korp` do  quebrado. `probe_success` é a única série que
 # atravessa o NGINX e confere o corpo da resposta (módulo korp_contract:

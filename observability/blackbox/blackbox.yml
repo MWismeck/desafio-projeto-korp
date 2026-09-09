@@ -23,7 +23,7 @@ modules:
       preferred_ip_protocol: ip4
       ip_protocol_fallback: false # korp-net é IPv4; fallback só mascararia erro de DNS
       follow_redirects: false # o endpoint responde direto; um 30x aqui é defeito, não sucesso
-      fail_if_not_ssl: false # sem TLS no escopo do brief (DEBT-05)
+      fail_if_not_ssl: false # sem TLS no escopo do desafio (DEBT-05)
       # {"nome":"Projeto Korp","horario":"..."} — tolerante ao espaçamento do encoder.
       fail_if_body_not_matches_regexp:
         - '"nome"[[:space:]]*:[[:space:]]*"Projeto Korp"'

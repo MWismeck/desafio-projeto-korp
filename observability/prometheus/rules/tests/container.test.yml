@@ -1,6 +1,6 @@
 # observability/prometheus/rules/tests/container.test.yml — testes unitários da saúde de container.
 # Um caso POSITIVO (todos os modos de falha ativos) e um NEGATIVO (container saudável) por alerta,
-# como exige  /. Rodar: promtool test rules container.test.yml
+# Rodar: promtool test rules container.test.yml
 rule_files:
   - ../container.rules.yml
 

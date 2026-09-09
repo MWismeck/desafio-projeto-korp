@@ -26,7 +26,7 @@ const (
 // Config is the configuration contract of http-server-projeto-korp. Names and defaults mirror
 // compose.yml and .env.example; only what varies between deployments lives here.
 type Config struct {
-	// Port is the listening port of the API (REQ-03). Never published on the host: only NGINX reaches it.
+	// Port is the listening port of the API. Never published on the host: only NGINX reaches it.
 	Port int `env:"APP_PORT, default=8080"`
 	// Env labels the deployment (local, dev, prod) in telemetry; it never branches code paths.
 	Env string `env:"APP_ENV, default=local"`

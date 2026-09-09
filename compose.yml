@@ -1,13 +1,13 @@
 # compose.yml — Desafio Korp.
 #
-# PERFIL PADRÃO (o que o brief exige, e nada além —  /  C2):
+# PERFIL PADRÃO (o que o enunciado exige, e nada além —  /  C2):
 #   http-server-projeto-korp (sem ports) · nginx (80:80) · prometheus (9090) · grafana (3000)
 #
-# PERFIL `full` (stack estendido de observabilidade, decisão do Humano em 2026-09-06 →):
+# PERFIL `full` — observabilidade opcional, nada dele é exigido pelo desafio:
 #   três pilares correlacionados + perfilamento contínuo + saúde de container.
 #   alertmanager · cadvisor · node-exporter ·
 #   blackbox-exporter · nginx-exporter — TODOS sem `ports:` (apenas `expose:`): o perfil `full` é
-#   laboratório e não pode ampliar a superfície publicada no host (R-08).
+#   laboratório e não pode ampliar a superfície publicada no host.
 #
 # LIMITES DE RECURSO (correção 2026-09-06, achado F5): TODO serviço declara `cpus` e `mem_limit`.
 # POR QUE isso não é cosmético: sem limite, o cgroup do container não tem teto e o cAdvisor exporta
@@ -16,7 +16,7 @@
 # permanentemente em zero. Limite declarado é PRÉ-REQUISITO da métrica de saturação, não enfeite.
 #
 # Imagens: sempre tag explícita (`:latest` proibido,  C4) com o comentário
-# `# pinar:` acima —  substitui pelo digest antes do primeiro push (DEBT-01,).
+# `# pinar:` acima — troque a tag pelo digest antes de publicar.
 name: projeto-korp
 
 # Rotação de log em todo serviço: sem isto um container falando muito enche o disco do host e leva
@@ -29,7 +29,7 @@ x-logging: &default-logging
 
 services:
   # ================================================================================================
-  # PERFIL PADRÃO — o mínimo do brief
+  # PERFIL PADRÃO — o mínimo do desafio
   # ================================================================================================
 
   http-server-projeto-korp:
@@ -88,7 +88,7 @@ services:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro       # / (http-server-projeto-korp.conf + stub_status.conf)
     depends_on:
       http-server-projeto-korp:
-        condition: service_healthy                # C3: subir o proxy antes do upstream só produz 502 na demo
+        condition: service_healthy                # subir o proxy antes do upstream só produz 502 na demo
     networks:
       - korp-net                                  # 
     restart: unless-stopped
@@ -213,7 +213,7 @@ services:
     container_name: cadvisor
     profiles: ["full"]
     # ------------------------------------------------------------------------------------------
-    # EXCEÇÃO DELIBERADA AO ENDURECIMENTO (R-07 /). Por que é aceitável AQUI:
+    # Exceção deliberada ao endurecimento aplicado aos demais serviços. Por que é aceitável aqui:
     #   1. O trabalho do cAdvisor é ler o cgroupfs, o /proc e o estado do daemon de TODOS os
     #      containers do host. Isso é, por definição, incompatível com read_only + cap_drop: [ALL]
     #      + rootfs isolado: sem privileged e sem os bind mounts do host ele sobe e não mede nada.

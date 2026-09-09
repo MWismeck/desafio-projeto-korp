@@ -33,7 +33,7 @@ monitoring_dashboards_full:
   - korp-edge.json
   - korp-container-health.json
 
-# Configuração exigida no perfil PADRÃO (os 4 serviços do brief). Caminhos relativos a project_root.
+# Configuração exigida no perfil PADRÃO (os 4 serviços do desafio). Caminhos relativos a project_root.
 monitoring_required_files:
   - observability/prometheus/prometheus.yml
   - observability/grafana/provisioning/datasources/datasources.yml

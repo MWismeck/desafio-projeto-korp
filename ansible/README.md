@@ -3,7 +3,7 @@
 Playbook que instala o Docker, cria a rede `korp-net`, constrói a imagem `http-server-projeto-korp`,
 sobe os containers com `docker compose` (app, nginx, prometheus, grafana), configura o proxy reverso do
 NGINX, valida o monitoramento e faz uma requisição HTTP exibindo a resposta no console
-(brief Parte 3)
+(Parte 3 do desafio)
 
 ## Pré-requisitos (no alvo Linux — WSL2 Ubuntu 22.04/24.04 ou VM Debian/Ubuntu)
 
@@ -111,7 +111,7 @@ ansible-playbook -i ansible/inventory.ini ansible/playbook.yml --list-tasks     
 | `monitoring_promtool_image` | `prom/prometheus:v3.5.0` | imagem usada para `promtool check/test` (nada é instalado no alvo) |
 | `nginx_network` | `korp-net` | rede usada no `nginx -t`; sem ela o teste falha em "host not found in upstream" |
 
-## Mapa role → requisito do brief
+## Mapa role → requisito do desafio
 
 | Role | Requisitos |
 |---|---|

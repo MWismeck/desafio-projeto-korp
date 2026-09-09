@@ -61,13 +61,13 @@ podem falhar.
 | Go | 1.25 (toolchain fixada em 1.25.14) | serviço | Binário estático sem dependência de libc; `net/http` com padrões de método desde a 1.22; `log/slog` na stdlib. A 1.24 saiu de suporte: das 34 falhas de stdlib apontadas pelo `govulncheck`, 20 não têm correção em nenhuma 1.24.x. Com a toolchain fixada, o resultado é zero. |
 | `net/http` + `http.ServeMux` | stdlib | roteamento e servidor | Quatro rotas não justificam framework. `chi` e `gin` foram considerados: adicionam dependência sem ganho aqui. Middleware é `func(http.Handler) http.Handler` puro. |
 | `log/slog` | stdlib | logs JSON | Zero dependência, JSON nativo, handler customizado injeta `trace_id` e `request_id`. `zap` e `zerolog` são mais rápidos, mas o ganho é irrelevante neste volume e o custo é uma API própria. |
-| `github.com/prometheus/client_golang` | ver `go.mod` | `/metrics` | É literalmente "o padrão do Prometheus" que o brief pede: controle total de nomes, buckets e exemplars. OTel Metrics com exporter Prometheus reescreve nomes e muda a semântica do histograma. |
+| `github.com/prometheus/client_golang` | ver `go.mod` | `/metrics` | É literalmente "o padrão do Prometheus" que o enunciado pede: controle total de nomes, buckets e exemplars. OTel Metrics com exporter Prometheus reescreve nomes e muda a semântica do histograma. |
 | `github.com/sethvargo/go-envconfig` | ver `go.mod` | configuração por env | Struct com tags, defaults e validação explícita no boot. `viper` traz `mapstructure`, `fsnotify` e precedência implícita; `koanf` resolve múltiplas fontes, problema que não existe aqui. |
 | `github.com/swaggo/swag` + `http-swagger` | ver `go.mod` | documentação da API em `/swagger/` | Padrão de fato em Go: anotações no handler geram a spec, e o CI falha se ela estiver desatualizada. Alternativa contrato-primeiro com `oapi-codegen` geraria mais código que o serviço inteiro. |
-| Docker Engine + Compose v2 | 27+ / v2 | build e execução | Exigidos pelo brief. |
+| Docker Engine + Compose v2 | 27+ / v2 | build e execução | Exigidos pelo desafio. |
 | Imagem de build | `golang:1.25` pinada por digest | Dockerfile, estágio 1 | Mesma série da toolchain do `go.mod`, para o binário da imagem ser idêntico ao que se compila localmente. |
 | Imagem de runtime | `alpine:3.20` | Dockerfile, estágio 2 | Ver §3.2: shell para diagnóstico em campo, ao custo de uma superfície um pouco maior que a do distroless. |
-| `nginx` | `nginx:1.27-alpine` | proxy reverso | Exigido pelo brief como imagem oficial; a variante Alpine é a mesma distribuição oficial, menor. |
+| `nginx` | `nginx:1.27-alpine` | proxy reverso | Exigido pelo desafio como imagem oficial; a variante Alpine é a mesma distribuição oficial, menor. |
 | `prom/prometheus` | `v3.5.0` | coleta e regras | Série 3.x atual; `promtool` da mesma imagem valida config e regras no CI. |
 | `grafana/grafana` | `11.3.0` | visualização | Provisioning de datasources e dashboards por arquivo, que é o diferencial citado pelo desafio. |
 | `ansible-core` + `community.docker` | 2.17+ / 4.x | provisionamento | Módulos declarativos com idempotência real e suporte a `--check`. `shell: docker …` sempre reporta mudança e esconde erro. |
@@ -82,8 +82,8 @@ podem falhar.
 | Pergunta | Resposta |
 |---|---|
 | O que fiz | `cmd/http-server-projeto-korp` monta config, servidor e sinais. `internal/handler` serializa `{"nome","horario"}` com `time.Now.UTC` chamado dentro do handler, a cada requisição, em RFC 3339. Rotas `/healthz`, `/readyz`, `/metrics`, `/swagger/`. `http.Server` com todos os timeouts explícitos e desligamento gracioso por `SIGTERM`. |
-| Por quê | A stdlib basta para essas rotas. UTC dentro do handler porque o brief exige "resolvido dinamicamente a cada requisição"; RFC 3339 é o formato padrão de `time.Time` em JSON e não depende do fuso do container. |
-| Alternativas consideradas | Framework HTTP (dependência sem ganho); `time.Now` sem `.UTC` (viola o brief se o `TZ` do container mudar); horário calculado no boot (viola "a cada requisição"). |
+| Por quê | A stdlib basta para essas rotas. UTC dentro do handler porque o enunciado exige "resolvido dinamicamente a cada requisição"; RFC 3339 é o formato padrão de `time.Time` em JSON e não depende do fuso do container. |
+| Alternativas consideradas | Framework HTTP (dependência sem ganho); `time.Now` sem `.UTC` (viola o enunciado se o `TZ` do container mudar); horário calculado no boot (viola "a cada requisição"). |
 | Trade-offs | Sem framework, o middleware de métricas, logs e recuperação de panic é escrito à mão: mais código, menos dependência. |
 | Como validar | `go test -race ./...` cobre handler com relógio injetado, 405 para métodos errados e o caso de duas requisições seguidas devolverem horários diferentes. Pela borda: `curl -s localhost/projeto-korp` duas vezes. |
 | Clean code aplicado | Um comentário é uma frase que explica o porquê; godoc em todo identificador exportado; nenhum número mágico; todo erro envolvido com contexto; sem variável global mutável; handler recebe o relógio e as métricas por injeção. |
@@ -120,8 +120,8 @@ do container do NGINX, `localhost` é o próprio NGINX, então o `proxy_pass` us
 | Pergunta | Resposta |
 |---|---|
 | O que fiz | Serviço `http-server-projeto-korp` com `expose: 8080` e **sem `ports:`**; `nginx` com `80:80` e volume `./nginx/conf.d:/etc/nginx/conf.d:ro`; ambos em `korp-net`. Endurecimento em todos: `read_only`, `cap_drop: [ALL]`, `no-new-privileges`, `pids_limit`, e limites de CPU e memória. |
-| Por quê | O brief exige que o app não publique porta e que o NGINX seja a única entrada. Limites de recurso existem porque sem quota as métricas de saturação de container não significam nada (§6). |
-| Alternativas consideradas | Publicar `8080` "para facilitar o teste" (viola o brief e esconde defeito de proxy). |
+| Por quê | O enunciado exige que o app não publique porta e que o NGINX seja a única entrada. Limites de recurso existem porque sem quota as métricas de saturação de container não significam nada (§6). |
+| Alternativas consideradas | Publicar `8080` "para facilitar o teste" (viola o enunciado e esconde defeito de proxy). |
 | Trade-offs | `read_only` impede `apk add` dentro do container em execução; instalar ferramenta exige subir o container sem essa flag, de propósito. |
 | Como validar | `docker compose config -q` nos dois perfis; `docker compose ps` mostra só `80`, `9090` e `3000` publicados. |
 
@@ -174,7 +174,7 @@ versionado e validado.
 ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
 ```
 
-Seis roles, na ordem dos itens do brief: `docker → network → app → nginx → monitoring → validate`. Cada
+Seis roles, na ordem dos itens do desafio: `docker → network → app → nginx → monitoring → validate`. Cada
 uma tem `defaults/` com variáveis prefixadas, e o comando continua único. `any_errors_fatal` garante que
 uma falha pare tudo com mensagem, em vez de deixar o ambiente pela metade.
 
@@ -199,7 +199,7 @@ e `--syntax-check`; a execução real e a prova de idempotência dependem do alv
 
 ## 6. Além do mínimo, e por quê
 
-O brief pede disponibilidade e volume. O que foi acrescentado responde a perguntas que essas duas métricas
+O enunciado pede disponibilidade e volume. O que foi acrescentado responde a perguntas que essas duas métricas
 deixam sem resposta.
 
 - **O ponto cego do caminho do usuário.** O Prometheus coleta o serviço direto na rede interna e nunca

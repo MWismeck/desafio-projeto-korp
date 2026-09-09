@@ -1,19 +1,6 @@
-# observability/prometheus/prometheus.yml — coleta do http-server-projeto-korp e da
-# plataforma de observabilidade ("stack estendido", decisão do Humano em 2026-09-06 /).
+# Coleta do http-server-projeto-korp e dos exporters do perfil `full`.
 #
-# Validar (sem promtool no host; Docker Desktop no ar):
-#   MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD/observability/prometheus:/cfg" \
-#     --entrypoint promtool prom/prometheus:v2.55.1 check config /cfg/prometheus.yml
-#
-# FLAGS DE PROCESSO exigidas por este arquivo — quem escreve o compose.yml precisa declará-las
-#   --config.file=/etc/prometheus/prometheus.yml
-#   --storage.tsdb.path=/prometheus
-#   --storage.tsdb.retention.time=45d      # >= 30d do error budget + margem (§7)
-#   --storage.tsdb.retention.size=2GB
-#   --web.enable-lifecycle                 # POST /-/reload; NUNCA publicado fora de korp-net/loopback
-#   --log.format=json
-# `--web.enable-admin-api` fica DESLIGADO; a porta é publicada só em 127.0.0.1:9090:9090.
-
+# Validar:  make promtool-test
 global:
   scrape_interval: 15s        # base do $__rate_interval do Grafana
   scrape_timeout: 10s         # SEMPRE < scrape_interval
@@ -48,11 +35,11 @@ scrape_config_files:
 
 scrape_configs:
   # ============================================================================================
-  # PERFIL PADRÃO — o que o brief exige e o que sustenta os alertas de sintoma.
+  # PERFIL PADRÃO — o que o enunciado exige e o que sustenta os alertas de sintoma.
   # SÓ jobs cujo alvo existe no perfil padrão do compose: o app e o próprio Prometheus.
   # ============================================================================================
 
-  # --- o serviço do brief: nome DNS do compose na rede korp-net (C3: nunca localhost) ---
+  # --- o serviço do desafio: nome DNS do compose na rede korp-net (nunca localhost) ---
   - job_name: http-server-projeto-korp
     metrics_path: /metrics                 # modo compat na:8080
     scheme: http

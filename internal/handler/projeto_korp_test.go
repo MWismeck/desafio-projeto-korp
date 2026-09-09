@@ -86,7 +86,7 @@ func TestProjetoKorp_ResolvesTimePerRequest(t *testing.T) {
 	}
 }
 
-// TestProjetoKorp_RealClockChangesAcrossSeconds is the REQ-06 evidence with the production clock:
+// TestProjetoKorp_RealClockChangesAcrossSeconds is the evidence with the production clock:
 // the second request is issued after the wall clock crosses a second boundary (timer, not Sleep).
 func TestProjetoKorp_RealClockChangesAcrossSeconds(t *testing.T) {
 	t.Parallel()
