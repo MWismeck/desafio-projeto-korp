@@ -81,8 +81,7 @@ nos dois sentidos. Um glob que não casa arquivo nenhum **não é erro** para o 
 
 ## Idempotência
 
-Rode o mesmo comando outra vez: o `PLAY RECAP` deve mostrar `changed=0`. É o que `` verifica com
-`GATE_ANSIBLE_RUN=1 bash scripts/gate.sh --gates `. Vale para os duas etapas: repetir o perfil padrão e
+Rode o mesmo comando outra vez: o `PLAY RECAP` deve mostrar `changed=0`. Vale para as duas etapas: repetir o perfil padrão e
 repetir o perfil estendido devem dar `changed=0`; alternar entre eles muda exatamente uma coisa (o
 `scrape_full.yml`) e dispara um reload.
 

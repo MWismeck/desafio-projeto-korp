@@ -64,15 +64,6 @@ compose.override.yml
 /ansible/roles/external/
 /.ansible/
 
-# --- Framework de desenvolvimento local ------------------
-# .agents/ (conhecimento, gates, memória), .claude/ (hooks, subagentes, skills), scripts/ (runner de
-# gates) e CLAUDE.md são ferramental de engenharia assistida; o repositório público contém só o produto.
-# O gate continua obrigatório antes de commitar — ele só não é versionado.
-.agents/
-.claude/
-scripts/
-CLAUDE.md
-
 # --- Saídas de gates / relatórios locais ------------------------------------
 sbom*.json
 sbom*.spdx*
@@ -81,8 +72,7 @@ gosec-*.json
 k6-*.json
 k6-*.html
 
-# --- Claude Code / editores / SO --------------------------------------------
-.claude/settings.local.json
+# --- Editores / SO -----------------------------------------------------------
 .idea/
 .vscode/
 *.swp
