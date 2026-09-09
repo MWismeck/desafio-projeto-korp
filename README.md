@@ -46,6 +46,14 @@ make up
 make smoke
 ```
 
+O `make up` cria a rede `korp-net` antes de subir o Compose. A rede é um recurso próprio, não do
+Compose, que é como o desafio a descreve. Sem `make`, crie a rede uma vez e depois use o Compose:
+
+```bash
+docker network create --driver bridge korp-net
+docker compose up -d --build --wait
+```
+
 ## O que fica acessível
 
 | Endereço | O que é |
