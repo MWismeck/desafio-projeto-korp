@@ -134,3 +134,21 @@ groups:
           description: "Pela tendência das últimas 6 h, node_filesystem_avail_bytes chega a zero em menos de 4 h em {{ $labels.instance }} ({{ $labels.device }}), com menos de 30 % livre agora. Disco cheio para o TSDB, o log do Docker e o próprio serviço. Ação: podar imagem/volume, rotacionar log, revisar retention.size."
           runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#hostdiskwillfill"
           dashboard_url: "http://localhost:3000/d/korp-container-health"
+
+      # ---------- Telemetria de host ausente ----------
+      # HostDiskWillFill depende inteiramente de node_filesystem_*: sem série, a expressão devolve
+      # vetor vazio, o Prometheus considera a regra saudável (health=ok) e a previsão de disco cheio
+      # simplesmente nunca acontece. node_cpu_seconds_total é a métrica mais básica do node-exporter —
+      # se nem ela chega, nenhuma outra chega.
+      - alert: NodeTelemetryMissing
+        expr: absent(node_cpu_seconds_total)
+        for: 10m                    # tolera reinício do node-exporter e o intervalo de scrape sem acordar ninguém
+        labels:
+          severity: warning
+          team: sre
+          service: node-exporter    # absent() não devolve label alguma; sem esta, o agrupamento por `service` do Alertmanager ficaria vazio
+        annotations:
+          summary: "Telemetria de host sumiu: nenhuma série node_cpu_seconds_total armazenada"
+          description: "O Prometheus não guarda nenhuma amostra de node_cpu_seconds_total há 10 min. Enquanto durar, HostDiskWillFill está CEGO — avalia vetor vazio e nunca dispara, então disco enchendo passa despercebido. Conferir o alvo `node` em /targets e `curl -s node-exporter:9100/metrics | head`."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#nodetelemetrymissing"
+          dashboard_url: "http://localhost:3000/d/korp-container-health"

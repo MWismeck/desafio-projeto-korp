@@ -138,3 +138,21 @@ groups:
           description: "container_last_seen não é atualizado há mais de 120 s: container removido, parado ou o cgroup deixou de existir. Conferir com `docker ps -a --filter name={{ $labels.name }}`."
           runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#containermissing"
           dashboard_url: "http://localhost:3000/d/korp-container-health"
+
+      # ---------- Telemetria de container ausente ----------
+      # Os cinco alertas acima só enxergam o que o cAdvisor entrega. Quando ele deixa de entregar,
+      # cada expressão passa a devolver vetor VAZIO — e vetor vazio não é erro para o Prometheus:
+      # as regras continuam com health=ok, nenhuma dispara e a ausência vira silêncio. Este alerta
+      # existe para que o silêncio faça barulho.
+      - alert: ContainerTelemetryMissing
+        expr: absent(container_last_seen)
+        for: 10m                    # tolera reinício do cAdvisor e o intervalo de scrape sem acordar ninguém
+        labels:
+          severity: warning
+          team: sre
+          service: cadvisor         # absent() não devolve label alguma; sem esta, o agrupamento por `service` do Alertmanager ficaria vazio
+        annotations:
+          summary: "Telemetria de container sumiu: nenhuma série container_last_seen armazenada"
+          description: "O Prometheus não guarda nenhuma amostra de container_last_seen há 10 min. Enquanto durar, ContainerOOMKilled, ContainerRestartLoop, ContainerCPUThrottled, ContainerMemoryNearLimit e ContainerMissing estão CEGOS — avaliam vetor vazio e nunca disparam. Checar `curl -s cadvisor:8080/metrics | grep container_last_seen`: se as linhas existem mas nenhuma traz a label `name=`, o cAdvisor não conseguiu resolver o nome do container no storage driver deste host."
+          runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#containertelemetrymissing"
+          dashboard_url: "http://localhost:3000/d/korp-container-health"

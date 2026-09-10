@@ -233,3 +233,36 @@ tests:
       - alertname: HostDiskWillFill
         eval_time: 2h
         exp_alerts: []
+
+  # ============================================================================================
+  # Caso 5 (REGRESSÃO): o node-exporter para de entregar node_cpu_seconds_total no minuto 5.
+  # Os casos anteriores alimentam séries sintéticas do começo ao fim e por isso passariam idênticos
+  # com a coleta do host morta — quem fabrica o dado é o teste. Aqui a série existe em metade da
+  # janela e some na outra: prova os dois lados no mesmo cenário, calado com dado e disparando sem.
+  # ============================================================================================
+  - interval: 1m
+    input_series:
+      - series: 'node_cpu_seconds_total{job="node",service="node-exporter",instance="node-exporter:9100",cpu="0",mode="idle"}'
+        values: '0+60x5'          # amostras só até t=5m; depois a série acaba
+    alert_rule_test:
+      # t=4m: a série ainda está lá — absent() é vazio e o alerta nem fica pendente
+      - alertname: NodeTelemetryMissing
+        eval_time: 4m
+        exp_alerts: []
+      # t=25m: sem amostra desde 5m, o lookback de 5 min expirou em 10m e o `for: 10m` fechou em 20m
+      - alertname: NodeTelemetryMissing
+        eval_time: 25m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              team: sre
+              service: node-exporter
+            exp_annotations:
+              summary: "Telemetria de host sumiu: nenhuma série node_cpu_seconds_total armazenada"
+              description: "O Prometheus não guarda nenhuma amostra de node_cpu_seconds_total há 10 min. Enquanto durar, HostDiskWillFill está CEGO — avalia vetor vazio e nunca dispara, então disco enchendo passa despercebido. Conferir o alvo `node` em /targets e `curl -s node-exporter:9100/metrics | head`."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#nodetelemetrymissing"
+              dashboard_url: "http://localhost:3000/d/korp-container-health"
+      # sem série de filesystem, HostDiskWillFill fica calado — é essa a cegueira que o alerta acima denuncia
+      - alertname: HostDiskWillFill
+        eval_time: 25m
+        exp_alerts: []
