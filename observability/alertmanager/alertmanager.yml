@@ -23,7 +23,7 @@ route:
 receivers:
   - name: default
     webhook_configs:
-      - url: http://localhost:5001/           # troque pelo webhook real (Slack, e-mail, pager) (a definir pelo Humano: Slack/PagerDuty/e-mail)
+      - url: http://localhost:5001/           # troque pelo webhook real (Slack, e-mail, pager)
         send_resolved: true
   - name: oncall-page
     webhook_configs:

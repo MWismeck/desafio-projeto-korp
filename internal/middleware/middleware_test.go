@@ -42,8 +42,9 @@ func newMux(t *testing.T) *http.ServeMux {
 // logLines decodes every JSON record in buf.
 func logLines(t *testing.T, buf *bytes.Buffer) []map[string]any {
 	t.Helper()
-	var lines []map[string]any
-	for _, raw := range bytes.Split(bytes.TrimSpace(buf.Bytes()), []byte("\n")) {
+	raws := bytes.Split(bytes.TrimSpace(buf.Bytes()), []byte("\n"))
+	lines := make([]map[string]any, 0, len(raws))
+	for _, raw := range raws {
 		if len(raw) == 0 {
 			continue
 		}

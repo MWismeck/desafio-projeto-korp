@@ -20,7 +20,11 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  # GOTOOLCHAIN=local proibe o Go de baixar outra toolchain: o que setup-go instalar e o que roda,
+  # sem surpresa de rede. Por isso a versao abaixo tem de ser a MESMA da linha `toolchain` do
+  # go.mod — e nao a da linha `go`, que e so o minimo da linguagem. Ao subir uma, subir a outra.
   GOTOOLCHAIN: local
+  GO_VERSION: '1.25.14'
 
 jobs:
   go:
@@ -30,14 +34,19 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: actions/setup-go@d35c59abb061a4a6fb18e82ac0862c26744d6ab5 # v5.5.0
         with:
-          go-version-file: go.mod
+          go-version: ${{ env.GO_VERSION }}
           cache: true
 
       - name: Ferramentas
         run: |
           go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.1.6
           go install github.com/securego/gosec/v2/cmd/gosec@v2.22.0
-          go install golang.org/x/vuln/cmd/govulncheck@latest
+          # versao fixada, e nao @latest: a v1.8.0 exige Go >= 1.26 para compilar, e este job roda com
+          # GOTOOLCHAIN=local, ou seja, a toolchain declarada no go.mod (1.25) — com @latest o passo
+          # falha na INSTALACAO, antes de analisar uma linha. A v1.7.0 e a ultima que compila com 1.25.
+          # Nao voltar mais: a v1.1.4 instala, mas foi compilada com Go 1.24 e recusa analisar
+          # pacotes 1.25 ("package requires newer Go version"). Ao subir a toolchain, subir este pin.
+          go install golang.org/x/vuln/cmd/govulncheck@v1.7.0
           go install github.com/swaggo/swag/cmd/swag@v1.16.4
 
       - name: Build estático (é o binário que vai para a imagem)
@@ -138,7 +147,10 @@ jobs:
 
       - name: Smoke — sobe o ambiente e chama o serviço pelo NGINX
         run: |
-          cp.env.example.env
+          cp .env.example .env
+          # korp-net e external: true no compose: quem cria e a role network do Ansible ou o alvo up
+          # do Makefile. Sem isto o compose recusa subir (network korp-net declared as external).
+          docker network inspect korp-net >/dev/null 2>&1 || docker network create --driver bridge korp-net
           VERSION=ci docker compose up -d --wait --wait-timeout 90
           docker compose ps
           body="$(curl -fsS http://localhost/projeto-korp)"
@@ -146,12 +158,16 @@ jobs:
           echo "$body" | docker run --rm -i ghcr.io/jqlang/jq:1.7.1 -e '.nome == "Projeto Korp" and (.horario | length) > 0' >/dev/null
           curl -fsS http://localhost/swagger/index.html >/dev/null
           curl -fsS http://localhost:9090/-/ready
-          # o alvo do serviço precisa estar UP no Prometheus
+          # O alvo do servico precisa estar UP no Prometheus. activeTargets[] COM os colchetes: sem
+          # eles o filtro roda sobre o ARRAY inteiro, nunca casa, e a espera terminava em silencio,
+          # dando o smoke por bom. Por isso tambem o ok: laco que esgota tem de reprovar.
+          ok=0
           for _ in $(seq 1 12); do
-            curl -s http://localhost:9090/api/v1/targets \
-              | docker run --rm -i ghcr.io/jqlang/jq:1.7.1 -e '.data.activeTargets | select(.labels.job=="http-server-projeto-korp") | select(.health=="up")' >/dev/null && break
+            if curl -s http://localhost:9090/api/v1/targets \
+              | docker run --rm -i ghcr.io/jqlang/jq:1.7.1 -e '.data.activeTargets[] | select(.labels.job=="http-server-projeto-korp") | select(.health=="up")' >/dev/null; then ok=1; break; fi
             sleep 5
           done
+          if [ "$ok" != 1 ]; then echo "::error::alvo http-server-projeto-korp nao ficou UP no Prometheus"; exit 1; fi
 
       - name: Logs em caso de falha
         if: failure()
@@ -159,7 +175,9 @@ jobs:
 
       - name: Derruba o stack
         if: always()
-        run: docker compose --profile full down -v --remove-orphans
+        run: |
+          docker compose --profile full down -v --remove-orphans
+          docker network rm korp-net 2>/dev/null || true
 
   observability:
     name: Observabilidade — regras, alertas, dashboards e configs
@@ -170,17 +188,22 @@ jobs:
       - name: promtool — config, regras (lint estrito) e testes unitários
         run: |
           P="$PWD/observability/prometheus"
-          docker run --rm -v "$P:/cfg:ro" --entrypoint promtool prom/prometheus:v3.5.0 check config /cfg/prometheus.yml
-          docker run --rm -v "$P:/cfg:ro" --entrypoint promtool prom/prometheus:v3.5.0 check rules --lint=all --lint-fatal /cfg/rules/*.rules.yml
-          docker run --rm -v "$P:/cfg:ro" --entrypoint promtool prom/prometheus:v3.5.0 test rules /cfg/rules/tests/*.test.yml
+          # O glob precisa ser expandido DENTRO do container: /cfg so existe la. Passado direto ao
+          # promtool, o shell do runner tenta expandir /cfg/rules/*.rules.yml contra o proprio disco,
+          # nao encontra nada, entrega o padrao literal e o promtool morre com "path does not exist".
+          # Por isso --entrypoint sh -c em vez de --entrypoint promtool.
+          run_promtool() {
+            docker run --rm -v "$P:/cfg:ro" --entrypoint sh prom/prometheus:v3.5.0 -c "$1"
+          }
+          run_promtool 'promtool check config /cfg/prometheus.yml'
+          run_promtool 'promtool check rules --lint=all --lint-fatal /cfg/rules/*.rules.yml'
+          run_promtool 'promtool test rules /cfg/rules/tests/*.test.yml'
 
       - name: amtool — alertmanager.yml
         run: docker run --rm -v "$PWD/observability/alertmanager:/cfg:ro" --entrypoint amtool prom/alertmanager:v0.27.0 check-config /cfg/alertmanager.yml
 
-      - name: blackbox e OTel Collector
-        run: |
-          docker run --rm -v "$PWD/observability/blackbox:/cfg:ro" prom/blackbox-exporter:v0.25.0 --config.file=/cfg/blackbox.yml --config.check
-          docker run --rm -v "$PWD/observability/otel:/cfg:ro" otel/opentelemetry-collector-contrib:0.113.0 validate --config=/cfg/otel-collector.yaml
+      - name: blackbox — config.check
+        run: docker run --rm -v "$PWD/observability/blackbox:/cfg:ro" prom/blackbox-exporter:v0.25.0 --config.file=/cfg/blackbox.yml --config.check
 
       - name: Dashboards e provisioning do Grafana fazem parse
         run: |

@@ -776,7 +776,7 @@ ponta a ponta: `amtool --alertmanager.url=http://localhost:9093 alert add alertn
 e confirmar a chegada no canal; expirar o alerta de teste em seguida.
 
 **Causas prováveis.** Receiver `blackhole`/placeholder ainda em uso (pendência ``: canal real a
-definir pelo Humano); URL do webhook errada ou fora do ar; DNS/rede do container; TLS/proxy corporativo;
+definir); URL do webhook errada ou fora do ar; DNS/rede do container; TLS/proxy corporativo;
 credencial expirada; rate limit do destino.
 
 **Escalonamento.** `critical` → SEV2. Enquanto não entregar, o on-call acompanha `/alerts` do Prometheus
