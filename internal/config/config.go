@@ -23,6 +23,10 @@ const (
 	maxTimeout = time.Minute
 )
 
+// stopGracePeriod mirrors compose.yml: Docker sends SIGKILL once it expires, so a drain that
+// reaches it is cut short and the requests still in flight die with the container.
+const stopGracePeriod = 15 * time.Second
+
 // Config is the configuration contract of http-server-projeto-korp. Names and defaults mirror
 // compose.yml and .env.example; only what varies between deployments lives here.
 type Config struct {
@@ -32,7 +36,7 @@ type Config struct {
 	Env string `env:"APP_ENV, default=local"`
 	// LogLevel accepts debug|info|warn|error (slog.Level implements TextUnmarshaler).
 	LogLevel slog.Level `env:"LOG_LEVEL, default=info"`
-	// ShutdownTimeout caps the drain on SIGTERM; it must stay below the compose stop_grace_period (15s).
+	// ShutdownTimeout caps the drain on SIGTERM; Validate keeps it below the compose stop_grace_period.
 	ShutdownTimeout time.Duration `env:"SHUTDOWN_TIMEOUT, default=10s"`
 	// ReadHeaderTimeout bounds how long a client may take to send the request headers (slowloris).
 	ReadHeaderTimeout time.Duration `env:"READ_HEADER_TIMEOUT, default=5s"`
@@ -77,7 +81,7 @@ func (c Config) Validate() error {
 	if strings.TrimSpace(c.Env) == "" {
 		errs = append(errs, &ValidationError{Var: "APP_ENV", Reason: "must not be empty"})
 	}
-	if err := validateTimeout(c.ShutdownTimeout); err != nil {
+	if err := validateShutdownTimeout(c.ShutdownTimeout); err != nil {
 		errs = append(errs, &ValidationError{Var: "SHUTDOWN_TIMEOUT", Reason: err.Error()})
 	}
 	if err := validateTimeout(c.ReadHeaderTimeout); err != nil {
@@ -86,11 +90,20 @@ func (c Config) Validate() error {
 	return errors.Join(errs...)
 }
 
-// validateTimeout accepts (0, maxTimeout]; zero would disable the protection and a huge value would
-// defeat the compose grace period.
+// validateTimeout accepts (0, maxTimeout]; zero would disable the protection and anything beyond a
+// minute is an operator typo, not a tuning choice.
 func validateTimeout(d time.Duration) error {
 	if d <= 0 || d > maxTimeout {
 		return fmt.Errorf("must be in (0s, %s], got %s", maxTimeout, d)
+	}
+	return nil
+}
+
+// validateShutdownTimeout is stricter than validateTimeout because the drain only counts while the
+// container lives: the interval is open on both ends so the value stays strictly under SIGKILL.
+func validateShutdownTimeout(d time.Duration) error {
+	if d <= 0 || d >= stopGracePeriod {
+		return fmt.Errorf("must be in (0s, %s), got %s", stopGracePeriod, d)
 	}
 	return nil
 }

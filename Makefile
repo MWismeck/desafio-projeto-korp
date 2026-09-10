@@ -6,6 +6,11 @@ COMMIT  ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo none)
 LDFLAGS := -s -w -X main.version=$(VERSION) -X main.commit=$(COMMIT)
 PROM_IMG:= prom/prometheus:v3.5.0
 PROM_DIR:= $(CURDIR)/observability/prometheus
+# O Ansible só lê o ansible.cfg do diretório ATUAL, de ~/.ansible.cfg, de /etc/ansible/ansible.cfg ou
+# do caminho em ANSIBLE_CONFIG — nunca o que está ao lado do playbook. Como os alvos rodam a partir da
+# raiz, sem esta linha toda a configuração do projeto (become, roles_path, callback, forks) seria
+# ignorada em silêncio, com `config file = None`.
+export ANSIBLE_CONFIG := ansible/ansible.cfg
 
 .PHONY: help build run test lint sec swagger swagger-check check docker up up-full down logs smoke promtool-test ansible-check ansible-run bench sbom clean
 

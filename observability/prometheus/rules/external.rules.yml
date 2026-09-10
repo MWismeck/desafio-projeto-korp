@@ -60,7 +60,7 @@ groups:
 
       # Error budget EXTERNO restante na janela de 30 d, normalizado em [0,1] — mesma fórmula e mesma
       # convenção da regra interna `slo:availability:error_budget_remaining_ratio30d`
-      #/(1 - objetivo); objetivo 0.999 → 0.001 já resolvido).
+      # (1 - (1 - SLI) / (1 - objetivo); objetivo 0.999 → 0.001 já resolvido).
       # `clamp(..., 0, 1)`: sem ele um incidente longo produz -999 e arruína a escala do painel; com
       # janela de 30 d ainda incompleta o valor pode passar de 1. O orçamento estourado satura em 0 —
       # a profundidade do estouro está no burn rate acima, que não é clampado.
@@ -93,7 +93,7 @@ groups:
 
       # ---------- Contrato da API violado (corpo não bate com a regex do módulo korp_contract) ----------
       - alert: ServiceContractViolated
-        expr: probe_failed_due_to_regex{job="blackbox-http"} == 1
+        expr: probe_failed_due_to_regex{job="blackbox-http",probe="contrato"} == 1
         for: 1m
         labels:
           severity: critical

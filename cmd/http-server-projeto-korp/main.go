@@ -113,6 +113,9 @@ func serve(ctx context.Context, log *slog.Logger, cfg config.Config, ver, com st
 
 	reg := prometheus.NewRegistry()
 	m := metrics.New(reg, ver, com)
+	// Probes and scrape are traffic the platform makes against itself: they stay at DEBUG in the
+	// access log and out of the request metrics, which exist to describe what users do.
+	quietRoutes := []string{server.RouteHealthz, server.RouteReadyz, server.RouteMetrics}
 	srv := server.New(server.Options{
 		Addr:              cfg.Addr(),
 		ReadHeaderTimeout: cfg.ReadHeaderTimeout,
@@ -125,8 +128,8 @@ func serve(ctx context.Context, log *slog.Logger, cfg config.Config, ver, com st
 		Middleware: []middleware.Middleware{
 			middleware.Recover(log, m.PanicsRecovered),
 			middleware.RequestID(),
-			middleware.AccessLog(log, server.RouteHealthz, server.RouteReadyz, server.RouteMetrics),
-			middleware.Metrics(m),
+			middleware.AccessLog(log, quietRoutes...),
+			middleware.Metrics(m, quietRoutes...),
 		},
 		Up: m.ServiceUp,
 	})

@@ -33,7 +33,7 @@ precisa de elevação. Se o seu usuário tem `sudo` sem senha, pode omitir.
 Ao final, a última tarefa imprime o JSON do serviço. Rodar de novo termina com `changed=0`: o playbook é
 idempotente.
 
-**Pré-requisitos:** `ansible-core` 2.17 ou mais novo, e um usuário com `sudo` no alvo. Para desenvolver, Go 1.25 (o `go.mod` fixa a toolchain em 1.25.14, que o Go baixa sozinho se você tiver uma versão anterior). No WSL2, o Docker precisa de
+**Pré-requisitos:** `ansible-core` 2.15 ou mais novo, e um usuário com `sudo` no alvo. Para desenvolver, Go 1.25 (o `go.mod` fixa a toolchain em 1.25.14, que o Go baixa sozinho se você tiver uma versão anterior). No WSL2, o Docker precisa de
 `systemd=true` em `/etc/wsl.conf` para que o serviço suba.
 
 ### Só o Compose, para desenvolver
@@ -106,8 +106,9 @@ make up-full
 ansible-playbook -i ansible/inventory.ini ansible/playbook.yml -e '{"compose_profiles":["full"]}'
 ```
 
-No perfil padrão o Grafana mostra **um** dashboard, o do serviço, com todos os painéis preenchidos. Os
-dois painéis que leem estes exporters só são provisionados junto com eles, para nada abrir em branco.
+No perfil padrão o Grafana mostra **dois** dashboards: o do serviço, com todos os painéis preenchidos, e
+o de SLO, cujos painéis de disponibilidade externa dependem do `blackbox-exporter`. Os dois dashboards
+dedicados a estes exporters só são provisionados junto com eles, para nada abrir em branco.
 
 | Componente | Responde a pergunta |
 |---|---|
@@ -130,7 +131,7 @@ As regras vivem em `observability/prometheus/rules/` e têm teste unitário exec
 
 ```bash
 make help     # lista os alvos
-make check    # lint, testes, segurança e Swagger em dia — o mesmo que o CI roda
+make check    # lint, testes, segurança, Swagger e regras do Prometheus — o mesmo que o CI roda
 make test     # testes com detector de corrida e cobertura
 make docker   # constrói a imagem
 ```
@@ -148,6 +149,7 @@ internal/                       config, handler, server, middleware, metrics, lo
 api/                            documentação OpenAPI, gerada a partir das anotações
 nginx/conf.d/                   proxy reverso
 observability/                  Prometheus, regras com teste, dashboards e provisionamento do Grafana
+slo/                            o SLO do serviço: SLI, objetivo e janela do error budget
 ansible/                        playbook e as seis roles
 docs/                           decisões técnicas e runbooks
 ```

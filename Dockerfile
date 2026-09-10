@@ -45,8 +45,8 @@ COPY --from=build /out/http-server-projeto-korp /http-server-projeto-korp
 USER 65532:65532
 ENV APP_PORT=8080
 EXPOSE 8080
-# Alpine traz wget (BusyBox): healthcheck direto na imagem, sem depender de flag do binário.
-# A flag `-healthcheck` do binário continua existindo e é o que o compose usa (forma exec, portável).
+# A sonda é o próprio binário: `-healthcheck` lê o mesmo APP_PORT que o servidor escuta, então mudar
+# a porta não deixa a sonda apontando para a errada. Forma exec, igual à do compose, sem depender de shell.
 HEALTHCHECK --interval=10s --timeout=2s --start-period=3s --retries=3 \
-  CMD ["wget", "-q", "-O", "/dev/null", "--timeout=2", "http://127.0.0.1:8080/healthz"]
+  CMD ["/http-server-projeto-korp", "-healthcheck"]
 ENTRYPOINT ["/http-server-projeto-korp"]

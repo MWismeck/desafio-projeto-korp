@@ -2,14 +2,14 @@
 #
 # ESTE ARQUIVO SÓ É COPIADO PARA O ALVO QUANDO `compose_profiles` INCLUI `full`.
 # A demo é em duas etapas:
-#   Perfil padrão (perfil padrão, o que o avaliador roda): app + NGINX + Prometheus + Grafana. A role
+#   Perfil padrão (o que o avaliador roda): app + NGINX + Prometheus + Grafana. A role
 #     `monitoring` do Ansible NÃO copia este arquivo; o glob `scrape_*.yml` de prometheus.yml não casa
 #     nada — o que NÃO é erro (verificado: `promtool check config` sai 0 em v2.55.1 e v3.5.0) — e o
 #     /targets abre 100 % verde, com 2 alvos UP e ZERO alvo vermelho.
 #   Perfil estendido (`docker compose --profile full up -d`): a role copia este arquivo e faz
-#     `POST /-/reload` (--web.enable-lifecycle); os 12 jobs abaixo entram sem reiniciar o Prometheus.
+#     `POST /-/reload` (--web.enable-lifecycle); os 7 jobs abaixo entram sem reiniciar o Prometheus.
 #
-# Sem essa separação o perfil padrão mostraria ~11 alvos DOWN ao avaliador — alvo vermelho em demo é ruído que
+# Sem essa separação o perfil padrão mostraria 8 alvos DOWN ao avaliador — alvo vermelho em demo é ruído que
 # não distingue "ainda não subiu" de "quebrado".
 #
 # CONTRATO DO ARQUIVO (promtool é rígido nos dois pontos):
@@ -18,8 +18,8 @@
 #   2. nenhum `job_name` daqui pode repetir um de prometheus.yml ("found multiple scrape configs with
 #      job name ..." → falha de carga).
 #
-# Padrões:  (um job por tipo de alvo, limites por scrape), §4 (relabel),
-# §9 (cardinalidade). Validar junto com o config principal:
+# Padrões seguidos aqui: um job por tipo de alvo, limites explícitos por scrape, relabel para escolher
+# o módulo de cada sonda e metric_relabel para conter cardinalidade. Validar junto com o config principal:
 #   MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD/observability/prometheus:/cfg" \
 #     --entrypoint promtool prom/prometheus:v3.5.0 check config /cfg/prometheus.yml
 scrape_configs:
@@ -49,8 +49,9 @@ scrape_configs:
   # dentro do container do blackbox, localhost seria o próprio blackbox.
   - job_name: blackbox-http
     metrics_path: /probe
-    params:
-      module: [korp_contract]              # definido em observability/blackbox/blackbox.yml
+    # Sem `params: module:` fixo no job: cada alvo escolhe o seu modulo pela label `module`, que o
+    # relabel abaixo transforma em __param_module. Um modulo unico para os dois alvos era o defeito
+    # anterior — /healthz sondado com korp_contract reprovava sempre na regex do corpo.
     sample_limit: 1000
     label_limit: 30
     label_name_length_limit: 200
@@ -58,12 +59,14 @@ scrape_configs:
     static_configs:
       - targets: ["http://nginx/projeto-korp"]      # caminho do usuário
         labels:
+          module: korp_contract
           service: http-server-projeto-korp
           probe: contrato
           env: local
           team: sre
       - targets: ["http://nginx/healthz"]           # liveness visto de fora
         labels:
+          module: korp_liveness
           service: http-server-projeto-korp
           probe: liveness
           env: local
@@ -72,6 +75,12 @@ scrape_configs:
       # troca canônica __param_target <-> __address__: o alvo real vira parâmetro da URL do exporter
       - source_labels: [__address__]
         target_label: __param_target
+      # a label `module` de cada alvo vira o parametro do exporter e depois e descartada: ela e
+      # roteamento, nao dimensao de metrica, e viraria cardinalidade em toda serie de probe.
+      - source_labels: [module]
+        target_label: __param_module
+      - action: labeldrop
+        regex: module
       - source_labels: [__param_target]
         target_label: instance                  # instance = URL sondada (http://nginx/projeto-korp)
       - target_label: __address__
@@ -187,5 +196,3 @@ scrape_configs:
           service: alertmanager
           env: local
           team: sre
-
-  # --- OpenTelemetry Collector: telemetria DO PRÓPRIO collector (fila, spans recusados/perdidos) ---

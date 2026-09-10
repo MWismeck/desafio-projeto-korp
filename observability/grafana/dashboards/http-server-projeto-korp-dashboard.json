@@ -44,20 +44,6 @@
       "asDropdown": true,
       "includeVars": true,
       "keepTime": true
-    },
-    {
-      "title": "Saúde de container e host",
-      "type": "link",
-      "icon": "cloud",
-      "url": "/d/korp-container-health?${__url_time_range}",
-      "targetBlank": false
-    },
-    {
-      "title": "Borda e caminho do usuário",
-      "type": "link",
-      "icon": "external link",
-      "url": "/d/korp-edge?${__url_time_range}",
-      "targetBlank": false
     }
   ],
   "templating": {
@@ -107,8 +93,8 @@
           "type": "prometheus",
           "uid": "${DS_PROMETHEUS}"
         },
-        "query": "label_values(up{job=~\"$service\"}, instance)",
-        "definition": "label_values(up{job=~\"$service\"}, instance)",
+        "query": "label_values(up{service=~\"$service\"}, instance)",
+        "definition": "label_values(up{service=~\"$service\"}, instance)",
         "current": {
           "selected": true,
           "text": "All",
@@ -203,7 +189,7 @@
             "type": "prometheus",
             "uid": "${DS_PROMETHEUS}"
           },
-          "expr": "min(up{job=~\"$service\"})",
+          "expr": "min(up{service=~\"$service\"})",
           "instant": true,
           "legendFormat": "up"
         }
@@ -429,7 +415,7 @@
       "type": "stat",
       "id": 4,
       "title": "Volume de requisições (período)",
-      "description": "Total de requisições atendidas no intervalo selecionado — increase(http_requests_total[$__range]). É o volume exigido pelo ; zero aqui na demo significa que falta gerar carga.",
+      "description": "Total de requisições atendidas no intervalo selecionado — increase(http_requests_total[$__range]). É o volume exigido pelo enunciado do desafio; zero aqui na demo significa que falta gerar carga.",
       "gridPos": {
         "h": 5,
         "w": 6,
@@ -891,14 +877,7 @@
         "tooltip": {
           "mode": "multi"
         }
-      },
-      "links": [
-        {
-          "title": "Saúde de container e host",
-          "url": "/d/korp-container-health?${__url_time_range}",
-          "targetBlank": false
-        }
-      ]
+      }
     },
     {
       "type": "timeseries",
@@ -1095,7 +1074,7 @@
       "type": "timeseries",
       "id": 14,
       "title": "Pausa de GC (quantis do runtime)",
-      "description": "go_gc_duration_seconds nos quantis 0,75 e 1. Pausa máxima acima de ~10 ms com heap estável sugere pressão de alocação — confirme no perfil (.",
+      "description": "go_gc_duration_seconds nos quantis 0,75 e 1. Pausa máxima acima de ~10 ms com heap estável sugere pressão de alocação — confira o painel de memória ao lado antes de mexer no código.",
       "gridPos": {
         "h": 6,
         "w": 12,

@@ -65,6 +65,7 @@ func TestLoad_Invalid_NamesTheVariable(t *testing.T) {
 		{name: "invalid LOG_LEVEL unknown", env: map[string]string{"LOG_LEVEL": "loud"}, wantVar: "LOG_LEVEL"},
 		{name: "invalid SHUTDOWN_TIMEOUT negative", env: map[string]string{"SHUTDOWN_TIMEOUT": "-1s"}, wantVar: "SHUTDOWN_TIMEOUT"},
 		{name: "invalid SHUTDOWN_TIMEOUT too long", env: map[string]string{"SHUTDOWN_TIMEOUT": "2m"}, wantVar: "SHUTDOWN_TIMEOUT"},
+		{name: "invalid SHUTDOWN_TIMEOUT reaches the compose stop grace period", env: map[string]string{"SHUTDOWN_TIMEOUT": "15s"}, wantVar: "SHUTDOWN_TIMEOUT"},
 		{name: "invalid SHUTDOWN_TIMEOUT not a duration", env: map[string]string{"SHUTDOWN_TIMEOUT": "10"}, wantVar: "SHUTDOWN_TIMEOUT"},
 		{name: "invalid READ_HEADER_TIMEOUT zero", env: map[string]string{"READ_HEADER_TIMEOUT": "0s"}, wantVar: "READ_HEADER_TIMEOUT"},
 	}
@@ -107,12 +108,13 @@ func TestLoad_ValidOverrides(t *testing.T) {
 	t.Setenv("APP_ENV", "prod")
 	t.Setenv("LOG_LEVEL", "DEBUG")
 	t.Setenv("READ_HEADER_TIMEOUT", "2s")
+	t.Setenv("SHUTDOWN_TIMEOUT", "14s")
 
 	cfg, err := config.Load(context.Background())
 	if err != nil {
 		t.Fatalf("Load() err = %v, want nil", err)
 	}
-	if cfg.Addr() != ":18080" || cfg.Env != "prod" || cfg.LogLevel != slog.LevelDebug || cfg.ReadHeaderTimeout != 2*time.Second {
+	if cfg.Addr() != ":18080" || cfg.Env != "prod" || cfg.LogLevel != slog.LevelDebug || cfg.ReadHeaderTimeout != 2*time.Second || cfg.ShutdownTimeout != 14*time.Second {
 		t.Fatalf("overrides not applied: %+v", cfg)
 	}
 }

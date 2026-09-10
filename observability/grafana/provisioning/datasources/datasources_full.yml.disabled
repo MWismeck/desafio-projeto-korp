@@ -1,0 +1,23 @@
+# observability/grafana/provisioning/datasources/datasources_full.yml.disabled — perfil estendido.
+#
+# Por que nasce desativado: o container `alertmanager` só sobe no perfil `full`. No perfil padrão da
+# entrega esta datasource ficaria vermelha na UI do Grafana — parece defeito e não é. O provisioning
+# lê apenas `.yml`/`.yaml`, então enquanto o sufixo `.disabled` estiver no nome o arquivo é inerte.
+# Quem tira o sufixo é a role de monitoramento, no mesmo ponto em que ativa `scrape_full.yml` e os
+# dashboards do perfil estendido.
+apiVersion: 1
+
+deleteDatasources: []
+
+datasources:
+  # Só para VER o estado dos alertas dentro do Grafana. A avaliação das regras continua no Prometheus
+  # e o roteamento no Alertmanager: nada de alerta gerenciado pelo Grafana.
+  - name: Alertmanager
+    uid: alertmanager
+    type: alertmanager
+    access: proxy
+    url: http://alertmanager:9093
+    editable: false
+    jsonData:
+      implementation: prometheus
+      handleGrafanaManagedAlerts: false

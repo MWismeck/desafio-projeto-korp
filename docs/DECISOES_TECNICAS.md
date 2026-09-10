@@ -5,8 +5,8 @@
 | Projeto | Desafio DevOps "Projeto Korp" — serviço `http-server-projeto-korp` |
 | Autor | MWismeck |
 | Repositório | https://github.com/MWismeck/desafio-projeto-korp |
-| Versão do documento | 1.0.0 — 2026-09-07 |
-| Ambiente de desenvolvimento | Windows 11 + Git Bash; Go 1.24.3; Docker Desktop 28 |
+| Versão do documento | 1.1.0 — 2026-09-10 |
+| Ambiente de desenvolvimento | Windows 11 + Git Bash; Go 1.25.14; Docker Desktop 28 |
 | Ambiente alvo (Docker/Ansible) | Linux: WSL2 Ubuntu 24.04 ou VM Ubuntu 24.04 (o playbook trata os dois; ver §5.8) |
 | Guia passo a passo | `README.md` (pré-requisitos, comando único, saídas esperadas, troubleshooting) |
 
@@ -66,11 +66,11 @@ podem falhar.
 | `github.com/swaggo/swag` + `http-swagger` | ver `go.mod` | documentação da API em `/swagger/` | Padrão de fato em Go: anotações no handler geram a spec, e o CI falha se ela estiver desatualizada. Alternativa contrato-primeiro com `oapi-codegen` geraria mais código que o serviço inteiro. |
 | Docker Engine + Compose v2 | 27+ / v2 | build e execução | Exigidos pelo desafio. |
 | Imagem de build | `golang:1.25` pinada por digest | Dockerfile, estágio 1 | Mesma série da toolchain do `go.mod`, para o binário da imagem ser idêntico ao que se compila localmente. |
-| Imagem de runtime | `alpine:3.20` | Dockerfile, estágio 2 | Ver §3.2: shell para diagnóstico em campo, ao custo de uma superfície um pouco maior que a do distroless. |
+| Imagem de runtime | `alpine:3.20` pinada por digest | Dockerfile, estágio 2 | Ver §3.2: shell para diagnóstico em campo, ao custo de uma superfície um pouco maior que a do distroless. |
 | `nginx` | `nginx:1.27-alpine` | proxy reverso | Exigido pelo desafio como imagem oficial; a variante Alpine é a mesma distribuição oficial, menor. |
 | `prom/prometheus` | `v3.5.0` | coleta e regras | Série 3.x atual; `promtool` da mesma imagem valida config e regras no CI. |
 | `grafana/grafana` | `11.3.0` | visualização | Provisioning de datasources e dashboards por arquivo, que é o diferencial citado pelo desafio. |
-| `ansible-core` + `community.docker` | 2.17+ / 4.x | provisionamento | Módulos declarativos com idempotência real e suporte a `--check`. `shell: docker …` sempre reporta mudança e esconde erro. |
+| `ansible-core` + `community.docker` | 2.17+ / >=3.10 e <5 | provisionamento | Módulos declarativos com idempotência real e suporte a `--check`. `shell: docker …` sempre reporta mudança e esconde erro. |
 | `golangci-lint`, `gosec`, `govulncheck` | fixados no CI | qualidade e segurança do Go | Lint, análise estática de segurança e vulnerabilidades conhecidas nas dependências. |
 | `hadolint`, `trivy`, `gitleaks` | fixados no CI | imagem, dependências, segredos | Cada um cobre uma camada: Dockerfile, CVEs, segredo vazado no histórico. |
 | `promtool`, `amtool`, `ansible-lint`, `yamllint`, `actionlint` | fixados no CI | configs como código | Tudo que é YAML de infraestrutura tem um validador rodando antes do merge. |
@@ -92,12 +92,12 @@ podem falhar.
 
 | Pergunta | Resposta |
 |---|---|
-| O que fiz | Multi-stage: `golang:1.24` compila com `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=…"`; runtime `alpine:3.20` com `ca-certificates` e `tzdata`, usuário `65532` criado no Dockerfile, `HEALTHCHECK` com o `wget` do BusyBox, `ENTRYPOINT` em forma exec. |
+| O que fiz | Multi-stage: `golang:1.25` compila com `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -X main.version=…"`; runtime `alpine:3.20` com `ca-certificates` e `tzdata`, usuário `65532` criado no Dockerfile, `HEALTHCHECK` que chama o próprio binário com `-healthcheck`, `ENTRYPOINT` em forma exec. Os dois estágios são pinados por digest, com a tag antes do `@` para continuar legível. |
 | Por quê | Alpine dá shell e `apk` para diagnosticar um container em campo sem rebuild. O binário é estático, então a `musl` do Alpine nem é usada pelo app, o que anula a objeção clássica ao Alpine em Go. |
 | Alternativas consideradas | `distroless/static` (superfície mínima, mas sem shell: diagnóstico só por observabilidade); `distroless:debug` (tem shell, não tem gerenciador de pacotes, e uma tag "debug" em produção é difícil de defender); `scratch` (exige copiar CA, tzdata e `/etc/passwd` à mão). |
 | Trade-offs | `apk`, `busybox` e `musl` entram no inventário de CVEs. Mitigado por usuário não-root, base pinada, `apk --no-cache`, `read_only` no Compose e `trivy` no CI. A pontuação entre Alpine e distroless ficou apertada; a escolha foi deliberada, não folgada. |
 | Como validar | `hadolint Dockerfile` limpo; `docker build`; `docker image inspect --format '{{.Config.User}} {{.Size}}'` mostra usuário numérico e imagem abaixo de 30 MB; `trivy image`. |
-| O que faria com mais tempo | Digest da base pinado no `FROM`; assinatura com `cosign`; SBOM publicado no release. |
+| O que faria com mais tempo | Assinatura da imagem com `cosign`; SBOM publicado junto do release. |
 
 ### 3.3 Docker em ambiente Linux
 
@@ -119,7 +119,7 @@ do container do NGINX, `localhost` é o próprio NGINX, então o `proxy_pass` us
 
 | Pergunta | Resposta |
 |---|---|
-| O que fiz | Serviço `http-server-projeto-korp` com `expose: 8080` e **sem `ports:`**; `nginx` com `80:80` e volume `./nginx/conf.d:/etc/nginx/conf.d:ro`; ambos em `korp-net`. Endurecimento em todos: `read_only`, `cap_drop: [ALL]`, `no-new-privileges`, `pids_limit`, e limites de CPU e memória. |
+| O que fiz | Serviço `http-server-projeto-korp` com `expose: 8080` e **sem `ports:`**; `nginx` com `80:80` e volume `./nginx/conf.d:/etc/nginx/conf.d:ro`; ambos em `korp-net`. Endurecimento: `read_only`, `cap_drop: [ALL]` e `no-new-privileges` no serviço — que ainda ganha `pids_limit` — e nos componentes do perfil `full`, com uma exceção declarada, o cAdvisor, que precisa ler o cgroupfs e os diretórios do host. O `nginx` também fica de fora do `read_only` porque a imagem oficial escreve em `/var/cache/nginx` e `/var/run` no boot. Limites de CPU e memória, esses, todo serviço tem. |
 | Por quê | O enunciado exige que o app não publique porta e que o NGINX seja a única entrada. Limites de recurso existem porque sem quota as métricas de saturação de container não significam nada (§6). |
 | Alternativas consideradas | Publicar `8080` "para facilitar o teste" (viola o enunciado e esconde defeito de proxy). |
 | Trade-offs | `read_only` impede `apk add` dentro do container em execução; instalar ferramenta exige subir o container sem essa flag, de propósito. |
@@ -130,7 +130,8 @@ do container do NGINX, `localhost` é o próprio NGINX, então o `proxy_pass` us
 Arquivo `nginx/conf.d/http-server-projeto-korp.conf`, com o nome exigido, montado somente leitura.
 `upstream` apontando para `http-server-projeto-korp:8080`, cabeçalhos `X-Forwarded-*`, timeouts
 explícitos, log de acesso em JSON. `/metrics` e `/debug/` devolvem 404 na borda: métricas são internas.
-Uma `location /swagger/` expõe a documentação da API pela mesma porta 80.
+Não há bloco dedicado à documentação: o `location /` repassa ao app tudo o que os blocos acima não
+capturam, então `/swagger/` responde pela mesma porta 80 sem configuração própria.
 
 Um defeito real foi encontrado e corrigido ao validar: `nginx -t` num container isolado falha porque o
 NGINX resolve o nome do `upstream` na carga. A validação precisa rodar na rede `korp-net` com o app no ar,
@@ -161,10 +162,14 @@ de 45 dias, porque a janela do orçamento de erro é de 30 e reter menos tornari
 
 ### 4.3 Grafana e dashboard (bônus)
 
-Datasources e dashboards provisionados por arquivo, sem clique. Dashboard `http-server-projeto-korp` com
-disponibilidade, volume, erro e latência, mais `korp-container-health` (saúde de container e host) e
-`korp-edge` (o que o usuário vê na borda). Todo painel tem unidade e descrição. Os dashboards são JSON
-versionado e validado.
+Datasources e dashboards provisionados por arquivo, sem clique. O perfil padrão sobe dois painéis:
+`http-server-projeto-korp` (disponibilidade, volume, erro e latência) e `slo-overview`, que põe as duas
+curvas de disponibilidade — a medida dentro do processo e a medida atravessando o NGINX — no mesmo
+eixo, com taxa de queima e orçamento de erro; a curva externa vem da sonda, então só tem dado com o
+perfil `full` no ar. Outros dois painéis, `korp-container-health` (saúde de container e host) e
+`korp-edge` (o que o usuário vê na borda), são versionados com o sufixo `.disabled` e só viram `.json`
+no perfil `full`: eles leem exporters que no perfil padrão não existem, e painel em branco na frente
+de quem avalia parece defeito. Todo painel tem unidade e descrição, e o JSON é versionado e validado.
 
 ## 5. Parte 3 — Automação com Ansible
 
@@ -218,11 +223,11 @@ deixam sem resposta.
 Tudo isso vive no perfil `full` do Compose, subido pelo mesmo playbook com uma variável a mais. O
 avaliador vê primeiro o mínimo do desafio funcionando; o resto é opcional.
 
-**O que deliberadamente ficou de fora.** Backend de traces, de logs e de perfis (Tempo, Loki, Alloy,
-Pyroscope) e o OpenTelemetry Collector. Eles resolvem problemas reais, e eu opero esse conjunto em
-produção, mas aqui custariam dez containers e um pipeline inteiro para um serviço de um endpoint. A
-complexidade não se pagaria e multiplicaria o que pode falhar na demonstração. Sei explicar como cada
-peça entra quando o volume justificar.
+**O que deliberadamente ficou de fora.** Backends de rastros, de logs e de perfilamento, com o coletor
+que os alimentaria. Resolvem problemas reais, mas exigiriam um pipeline próprio para um serviço de um
+endpoint: mais peças para falhar na demonstração do que perguntas respondidas. O que foi entregue —
+métricas, logs estruturados em JSON e health checks — responde às perguntas deste escopo; rastro
+distribuído passa a valer quando houver mais de um serviço na cadeia.
 
 ## 7. Como validar tudo
 
@@ -238,7 +243,7 @@ peça entra quando o volume justificar.
 
 - A execução real do playbook e a prova de idempotência (`changed=0` na segunda execução) só podem ser
   feitas num alvo Linux. Lint, sintaxe e as expressões foram validados.
-- Os digests das imagens base ainda não estão pinados no `FROM`; as tags são fixas.
+- A imagem não é assinada (`cosign`) e o SBOM gerado por `make sbom` não é publicado junto do release.
 - cAdvisor e node-exporter são frágeis em WSL2 (cgroup v2, mounts `9p`). Numa VM não há esse problema.
 - Com mais tempo: TLS na borda, alerta de 5xx por rota a partir do access log do NGINX, teste de carga com
   k6 sobreposto ao painel do servidor.

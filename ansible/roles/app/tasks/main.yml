@@ -38,6 +38,10 @@
 # docker_image_build e NAO docker_image: o primeiro chama `docker buildx`, o segundo constroi pela API
 # antiga do daemon, que nao entende `RUN --mount=type=cache` do Dockerfile e falha com "the --mount
 # option requires BuildKit". Verificado em Ubuntu 24.04 (WSL2) em 2026-09-08.
+#
+# Sem `check_mode: false` de proposito: com ele, `--check` construia a imagem de verdade, e o ensaio
+# que se anuncia inofensivo virava uma execucao real de varios minutos. Nada mais no playbook consome
+# a imagem durante um ensaio (compose, promtool e validate tambem nao agem em modo check).
 - name: Construir a imagem http-server-projeto-korp
   community.docker.docker_image_build:
     name: "{{ app_name }}"
@@ -55,7 +59,6 @@
             project_root ~ '/.ansible/sources-hash',
             errors='ignore') | default(''))
          else 'never' }}
-  check_mode: false
 
 - name: Registrar o checksum dos fontes usados no build
   ansible.builtin.copy:

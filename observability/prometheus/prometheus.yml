@@ -19,10 +19,10 @@ alerting:
         - targets: ["alertmanager:9093"]   # perfil `full`; fora dele o Prometheus loga WARN e segue coletando
       timeout: 10s
 
-# Jobs do PERFIL `full` (cAdvisor, node-exporter, nginx-exporter, blackbox-exporter, Grafana, Alertmanager,
-# nginx-exporter e blackbox) vivem em `scrape_full.yml`, arquivo IRMÃO carregado por este glob.
+# Jobs do PERFIL `full` (nginx-exporter, sonda blackbox, blackbox-exporter, cAdvisor, node-exporter,
+# Grafana e Alertmanager) vivem em `scrape_full.yml`, arquivo IRMÃO carregado por este glob.
 # Por que separado: no perfil PADRÃO da demo esses containers não existem; se os jobs estivessem aqui,
-# o /targets abriria com ~11 alvos DOWN no perfil padrão. O glob é resolvido em
+# o /targets abriria com 8 alvos DOWN no perfil padrão. O glob é resolvido em
 # tempo de carga do config e um glob que NÃO casa nenhum arquivo NÃO é erro — verificado com
 # `promtool check config` em prom/prometheus v2.55.1 e v3.5.0 (exit 0, "is valid prometheus config
 # file syntax"). Logo: no perfil padrão a role do Ansible simplesmente não copia `scrape_full.yml` e o
@@ -41,10 +41,10 @@ scrape_configs:
 
   # --- o serviço do desafio: nome DNS do compose na rede korp-net (nunca localhost) ---
   - job_name: http-server-projeto-korp
-    metrics_path: /metrics                 # modo compat na:8080
+    metrics_path: /metrics                 # exposto no MESMO mux da API, na porta 8080: não há porta de administração separada
     scheme: http
     scrape_protocols: [OpenMetricsText1.0.0, OpenMetricsText0.0.1, PrometheusProto, PrometheusText0.0.4]
-    sample_limit: 5000                     # ~150 séries reais; teto = alarme barato de cardinalidade (§9)
+    sample_limit: 5000                     # ~150 séries reais; teto = alarme barato de cardinalidade
     label_limit: 30
     label_name_length_limit: 200
     label_value_length_limit: 500
