@@ -51,7 +51,7 @@ ansible/.vault_pass*
 *.tar.gz
 docker-compose.override.yml
 compose.override.yml
-# dados persistidos de Prometheus/Grafana/Alertmanager/Tempo/Loki em execução local
+# dados persistidos de Prometheus, Grafana e Alertmanager em execução local
 /data/
 /observability/**/data/
 /observability/prometheus/wal/
@@ -94,3 +94,6 @@ observability/prometheus/scrape_full.yml
 # containers nao existem e o painel abriria em branco, o que parece defeito e nao e.
 observability/grafana/dashboards/korp-edge.json
 observability/grafana/dashboards/korp-container-health.json
+# Mesma razao para a datasource do Alertmanager: o container so existe no perfil estendido, e no
+# perfil padrao ela apareceria vermelha na UI. O versionado e o `.disabled`.
+observability/grafana/provisioning/datasources/datasources_full.yml

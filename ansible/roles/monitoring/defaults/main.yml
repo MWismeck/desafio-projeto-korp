@@ -32,6 +32,12 @@ monitoring_dashboards_full:
   - korp-edge.json
   - korp-container-health.json
 
+# Mesmo interruptor, para o provisionamento de datasources: a do Alertmanager aponta para um container
+# que só existe no perfil estendido e ficaria vermelha na UI do Grafana no perfil da entrega.
+monitoring_datasources_dir: "{{ project_root }}/observability/grafana/provisioning/datasources"
+monitoring_datasources_full:
+  - datasources_full.yml
+
 # Configuração exigida no perfil PADRÃO (os 4 serviços do desafio). Caminhos relativos a project_root.
 monitoring_required_files:
   - observability/prometheus/prometheus.yml

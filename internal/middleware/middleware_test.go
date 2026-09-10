@@ -271,3 +271,28 @@ func TestMetrics_CountsByPatternAndHandlesPanics(t *testing.T) {
 		t.Fatalf("promlint: %v %v", err, problems)
 	}
 }
+
+// Probes and the scrape hit the service every few seconds without a user behind them: counting
+// them would inflate http_requests_total and dilute the availability SLI built on it.
+func TestMetrics_QuietRoutesAreNotCounted(t *testing.T) {
+	t.Parallel()
+	reg := prometheus.NewPedanticRegistry()
+	m := metrics.New(reg, "v", "c")
+	h := middleware.Chain(newMux(t), middleware.Metrics(m, "/healthz"))
+
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/healthz", http.NoBody))
+	h.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/projeto-korp", http.NoBody))
+
+	if got := testutil.ToFloat64(m.Requests.WithLabelValues("GET", "/healthz", "200")); got != 0 {
+		t.Errorf("http_requests_total for the quiet route = %v, want 0", got)
+	}
+	if got := testutil.ToFloat64(m.Requests.WithLabelValues("GET", "/projeto-korp", "200")); got != 1 {
+		t.Errorf("http_requests_total for the business route = %v, want 1", got)
+	}
+	if got := testutil.CollectAndCount(m.Duration, "http_request_duration_seconds"); got != 1 {
+		t.Errorf("http_request_duration_seconds series = %d, want only the business route", got)
+	}
+	if got := testutil.ToFloat64(m.InFlight); got != 0 {
+		t.Errorf("http_requests_in_flight = %v after requests, want 0", got)
+	}
+}

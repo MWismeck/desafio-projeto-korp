@@ -4,7 +4,7 @@ status: canonical
 updated: 2026-09-06
 owner: SRE/On-call (Architect cura)
 consumers: [SRE/On-call, Incident Commander, Executor]
-related: [../DECISOES_TECNICAS.md,../.../observability/prometheus/rules/]
+related: [../DECISOES_TECNICAS.md, ../../observability/prometheus/rules/]
 ---
 
 # ALERT RUNBOOKS — um por alerta
@@ -35,12 +35,10 @@ related: [../DECISOES_TECNICAS.md,../.../observability/prometheus/rules/]
 | [PrometheusConfigReloadFailed](#prometheusconfigreloadfailed) | critical | Prometheus rodando com configuração antiga | `platform.rules.yml` |
 | [PrometheusRuleEvaluationFailing](#prometheusruleevaluationfailing) | critical | recording rules e alertas parados (SLI congelado) | `platform.rules.yml` |
 | [AlertmanagerNotificationsFailing](#alertmanagernotificationsfailing) | critical | alerta dispara e ninguém é avisado | `platform.rules.yml` |
-| [OtelCollectorSpansDropped](#otelcollectorspansdropped) | warning | spans perdidos no exporter (trace ausente na investigação) | `platform.rules.yml` |
 | [PrometheusHeadSeriesHigh](#prometheusheadserieshigh) | warning | cardinalidade acima do orçamento | `platform.rules.yml` |
 | [HostDiskWillFill](#hostdiskwillfill) | warning | disco do host previsto para acabar em menos de 4 h | `platform.rules.yml` |
 
-Todos os arquivos de regra ficam em `observability/prometheus/rules/` (bootstrap em
-`../templates/configs/observability/prometheus/rules/`).
+Todos os arquivos de regra ficam em `observability/prometheus/rules/`.
 
 Formato canônico por alerta: **Significado · Impacto · Como confirmar · Mitigação · Confirmar resolução ·
 Causas prováveis · Escalonamento**. Ordem das mitigações: **mais rápida e reversível primeiro**.
@@ -50,7 +48,7 @@ Comandos usados abaixo assumem o alvo Linux, na raiz do projeto, com a porta do 
 
 ```bash
 curl -sG http://localhost:9090/api/v1/query --data-urlencode 'query=<EXPR>' | jq '.data.result'
-curl -s http://localhost:9090/api/v1/alerts | jq '.data.alerts.labels'
+curl -s http://localhost:9090/api/v1/alerts | jq '.data.alerts[].labels'
 amtool --alertmanager.url=http://localhost:9093 alert query      # só no perfil full
 ```
 
@@ -70,7 +68,7 @@ sum by (code) (rate(http_requests_total{service="http-server-projeto-korp"}[5m])
 ```
 Dashboard `http-server-projeto-korp` → painel "Taxa de erro"; `slo-overview` → burn rate.
 
-**Mitigação.** Erro começou após deploy → rollback (`../workflows/rollback.md`). NGINX devolvendo 502/504
+**Mitigação.** Erro começou após deploy → rollback para a tag anterior. NGINX devolvendo 502/504
 → ver [ServiceUnavailable](#serviceunavailable). Erro em rota específica → desabilitar/feature flag.
 
 **Confirmar resolução.** `1 - service:sli_availability:ratio_rate5m` abaixo de `0.0144` e caindo; o alerta
@@ -191,7 +189,7 @@ que o defeito é de configuração do proxy; falhando, o defeito é de rede, DNS
 | 3 | container `nginx` parado ou reiniciando | `docker compose up -d nginx`; se persistir, `docker compose up -d --force-recreate nginx` |
 | 4 | `nginx` fora da `korp-net` (rede recriada por fora do compose) | `docker compose up -d` (reconecta) e conferir com `docker network inspect korp-net` |
 | 5 | app inalcançável de dentro do `nginx` (DNS do compose não resolve) | recriar os dois, nesta ordem: `docker compose up -d --force-recreate http-server-projeto-korp nginx` |
-| 6 | nada acima resolve em 10 min | abrir incidente. **Não** publicar a porta 8080 do app como "solução": viola / e esconde o defeito |
+| 6 | nada acima resolve em 10 min | abrir incidente. **Não** publicar a porta 8080 do app como "solução": contorna o caminho real do usuário e esconde o defeito da borda |
 
 **Confirmar resolução.** `curl -s http://localhost/projeto-korp` devolve o JSON com HTTP 200;
 `probe_success{job="blackbox-http",probe="contrato"}` = 1 por 1 min (o `for` da regra) e o alerta sai de
@@ -212,8 +210,8 @@ fora. Se `ServiceContractViolated` disparar junto, tratar como um único inciden
 ## ServiceContractViolated
 
 **Significado.** A sonda recebeu **HTTP 200** mas o corpo não bate com a regex do módulo `korp_contract`
-(`probe_failed_due_to_regex == 1`): a resposta não contém `"nome": "Projeto Korp"` — o contrato do
-**** está quebrado.
+(`probe_failed_due_to_regex == 1`): a resposta não contém `"nome": "Projeto Korp"` — o contrato da
+API está quebrado.
 
 **Impacto.** O usuário (e o avaliador) recebe uma resposta **errada com cara de sucesso**. Nenhum SLI
 baseado em 5xx registra isso: `http_requests_total{code="200"}`, `service_up`, `up` e o burn interno ficam
@@ -221,7 +219,7 @@ baseado em 5xx registra isso: `http_requests_total{code="200"}`, `service_up`, `
 
 **Como confirmar.**
 ```bash
-curl -s http://localhost/projeto-korp | jq.                    # esperado {"nome":"Projeto Korp","horario":"..."}
+curl -s http://localhost/projeto-korp | jq .                   # esperado {"nome":"Projeto Korp","horario":"..."}
 curl -sI http://localhost/projeto-korp | grep -i content-type   # esperado application/json
 curl -s http://localhost/projeto-korp; sleep 2; curl -s http://localhost/projeto-korp   # horario MUDA
 docker compose exec prometheus wget -qO- "http://blackbox-exporter:9115/probe?module=korp_contract&target=http://nginx/projeto-korp&debug=true" | head -60
@@ -237,7 +235,7 @@ ou path errado). Errado nos dois → defeito do app.
 | 1 | mudou depois de um deploy | rollback para a tag anterior: `ansible-playbook -i ansible/inventory.ini ansible/playbook.yml -e app_version=<tag anterior>` ou `VERSION=<tag> docker compose up -d http-server-projeto-korp` |
 | 2 | NGINX serve página própria (404 ou index padrão) em vez de fazer proxy | corrigir `location /projeto-korp` em `nginx/conf.d/http-server-projeto-korp.conf` e `docker compose exec nginx nginx -s reload` |
 | 3 | `Content-Type` fora de `application/json` | corrigir o header no handler; até lá, registrar o desvio no incidente — a resposta continua errada para o cliente |
-| 4 | corpo errado vindo do app (campo renomeado, `{}` em erro parcial) | rollback; sem versão anterior boa, correção por PR de emergência (`../workflows/bug.md`) |
+| 4 | corpo errado vindo do app (campo renomeado, `{}` em erro parcial) | rollback; sem versão anterior boa, correção por PR de emergência |
 
 **Não silenciar sem PR de correção associado**: silenciar este alerta devolve exatamente o ponto cego que
 a sonda externa existe para fechar.
@@ -344,7 +342,7 @@ container:memory_working_set:ratio        # quem está acima de 0.85 é o próxi
 | 1 | container não voltou (política `restart: unless-stopped` não reergueu) | `docker compose up -d http-server-projeto-korp` — restabelece o serviço agora |
 | 2 | houve deploy na última hora | rollback para a tag anterior; a versão nova provavelmente aumentou o consumo |
 | 3 | consumo legítimo maior que a quota | alívio imediato e reversível: subir `mem_limit` (ex.: `256m` → `512m`) e o `GOMEMLIMIT` correspondente (mantendo `GOMEMLIMIT` **abaixo** do `mem_limit`), depois `docker compose up -d http-server-projeto-korp` |
-| 4 | padrão de crescimento contínuo (suspeita de vazamento) | **antes** de reiniciar de novo, capturar evidência: heap no Pyroscope (perfil `full`) ou `pprof` — reiniciar apaga a prova |
+| 4 | padrão de crescimento contínuo (suspeita de vazamento) | **antes** de reiniciar de novo, guardar a evidência: `docker inspect` do container morto e a curva de `go_memstats_heap_inuse_bytes`/`go_goroutines` no painel "Saturação" — o reinício apaga o estado do processo |
 | 5 | OOM repetido (> 2× em 30 min) | tratar como crashloop: [ContainerRestartLoop](#containerrestartloop) e abrir incidente |
 
 **Confirmar resolução.** `container:oom_events:increase15m` = 0 e assim por 15 min inteiros (a janela da
@@ -384,7 +382,7 @@ o processo está terminando sozinho (comando errado no entrypoint).
 | # | Situação | Ação |
 |---|---|---|
 | 1 | reinício começou depois de um deploy | rollback para a tag anterior — para o laço imediatamente |
-| 2 | config inválida no boot (fail-fast do a verificação de CI) | corrigir a variável no `.env`/inventário e `docker compose up -d http-server-projeto-korp` |
+| 2 | config inválida no boot (fail-fast do app) | corrigir a variável no `.env`/inventário e `docker compose up -d http-server-projeto-korp` |
 | 3 | `ExitCode 137` | tratar como OOM: subir `mem_limit`/`GOMEMLIMIT` (ver aquele runbook) |
 | 4 | log some rápido demais para ler | congelar o laço para investigar: `docker update --restart=no http-server-projeto-korp` e depois `docker compose logs --tail=200`; **reverter** com `docker update --restart=unless-stopped` assim que capturar |
 | 5 | causa não encontrada em 15 min | abrir incidente; o serviço está efetivamente instável |
@@ -467,7 +465,7 @@ docker stats --no-stream http-server-projeto-korp
 | 1 | latência do usuário já degradada | subir a quota: `cpus: "0.5"` → `"1.0"` no `compose.yml` e `docker compose up -d http-server-projeto-korp` (reversível, sem downtime perceptível) |
 | 2 | pico de carga conhecido (teste `k6`, demo) | nenhuma ação; silenciar pela duração do teste, com motivo |
 | 3 | subiu depois de um deploy | rollback: a versão nova passou a gastar mais CPU por requisição |
-| 4 | throttling persiste com quota maior | investigar o gasto por função no Pyroscope (perfil `full`) e abrir item de backlog |
+| 4 | throttling persiste com quota maior | comparar `rate(container_cpu_usage_seconds_total)` com a taxa de requisições para achar o custo de CPU por requisição e abrir item de backlog |
 
 Sobre `GOMAXPROCS`: com quota fracionária (`cpus: "0.5"`), o runtime do Go pode assumir todos os núcleos
 do host e piorar o throttling. Conferir se o serviço declara `GOMAXPROCS` coerente com a quota.
@@ -506,10 +504,10 @@ Curva **plana e alta** = dimensionamento apertado. Curva **subindo sem parar** =
 
 | # | Situação | Ação |
 |---|---|---|
-| 1 | curva subindo continuamente (vazamento) | capturar o perfil de heap **antes** de reiniciar (Pyroscope/`pprof`), depois `docker compose up -d --force-recreate http-server-projeto-korp` para ganhar tempo |
+| 1 | curva subindo continuamente (vazamento) | registrar a curva de `go_memstats_heap_inuse_bytes` e `go_goroutines` **antes** de reiniciar, depois `docker compose up -d --force-recreate http-server-projeto-korp` para ganhar tempo |
 | 2 | curva plana e alta (dimensionamento) | subir `mem_limit` e o `GOMEMLIMIT` proporcional; `docker compose up -d http-server-projeto-korp` |
 | 3 | começou depois de um deploy | rollback |
-| 4 | outro container do perfil `full` é o autor (Loki, Tempo, Prometheus) | reduzir retenção/limites daquele componente; nunca deixe o laboratório espremer o serviço do desafio |
+| 4 | outro container é o autor (Prometheus, Grafana ou um exporter do perfil `full`) | reduzir retenção/limites daquele componente; a stack de observação nunca deve espremer o serviço |
 
 **Confirmar resolução.** `container:memory_working_set:ratio` abaixo de 0,85 por 10 min e a tendência de
 1 h horizontal ou descendente; nenhum evento novo em `container:oom_events:increase15m`.
@@ -529,7 +527,8 @@ cgroup do container — ele foi parado, removido, ou o cAdvisor perdeu acesso ao
 **Impacto.** Depende de **qual** container sumiu, e essa é a primeira pergunta:
 - `http-server-projeto-korp` ou `nginx` → o serviço do desafio está fora; `TargetDown`,
   `ServiceUnavailable` e `UserPathUnavailable` são o page real deste caso (por isso aqui é `warning`);
-- componente do perfil `full` (Tempo, Loki, Pyroscope) → perda de observabilidade, não de serviço;
+- componente do perfil `full` (Alertmanager, cAdvisor, node-exporter, blackbox-exporter,
+  nginx-exporter) → perda de observabilidade, não de serviço;
 - **nenhum container sumiu de fato** → o problema é o cAdvisor, e toda a família de alertas de container
   está cega (falha silenciosa, a pior categoria).
 
@@ -538,7 +537,7 @@ cgroup do container — ele foi parado, removido, ou o cAdvisor perdeu acesso ao
 docker ps -a --filter name=http-server-projeto-korp --format "table {{.Names}}\t{{.Status}}"
 docker compose ps -a
 docker compose logs --tail=50 cadvisor
-curl -s http://localhost:9090/api/v1/targets | jq -r ".data.activeTargets | select(.labels.job==\"cadvisor\") |.health,.lastError"
+curl -s http://localhost:9090/api/v1/targets | jq -r ".data.activeTargets[] | select(.labels.job==\"cadvisor\") | .health, .lastError"
 ```
 ```promql
 container:last_seen_age:seconds
@@ -552,7 +551,7 @@ count(container_last_seen)     # zero ou muito baixo = o cAdvisor é o problema,
 | 1 | o container sumido é do perfil padrão | `docker compose up -d <serviço>` — restabelecer o serviço vem antes de entender o motivo |
 | 2 | container removido de propósito (`docker compose down`, poda) | nenhuma ação; silenciar por ≤ 2 h com motivo, ou remover a série antiga esperando a drenagem |
 | 3 | `count(container_last_seen)` perto de zero | o cAdvisor caiu ou perdeu o runtime: `docker compose --profile full up -d cadvisor` e conferir os mounts (`/var/run/docker.sock`, `/sys`, rootfs) |
-| 4 | cAdvisor instável no WSL2 (cgroup v2, mounts `9p`/`drvfs`) | limitação conhecida do ambiente (``): registrar e, se recorrente, silenciar a família de container no WSL2 com o motivo documentado |
+| 4 | cAdvisor instável no WSL2 (cgroup v2, mounts `9p`/`drvfs`) | limitação conhecida do ambiente: registrar e, se recorrente, silenciar a família de container no WSL2 com o motivo documentado |
 
 **Confirmar resolução.** `container:last_seen_age:seconds` abaixo de 120 para os containers esperados e
 `count(container_last_seen)` de volta ao número de containers do perfil ativo; `docker compose ps` sem
@@ -595,7 +594,7 @@ docker compose logs --since 15m nginx | grep -iE "worker_connections|too many op
 
 | # | Situação | Ação |
 |---|---|---|
-| 1 | descarte em andamento com impacto | subir `worker_connections` no `nginx.conf` (ex.: 1024 → 4096) e `docker compose exec nginx nginx -t && docker compose exec nginx nginx -s reload` — sem downtime |
+| 1 | descarte em andamento com impacto | `worker_connections` (1024, padrão da imagem) fica em `/etc/nginx/nginx.conf`, que não é montado aqui — só `nginx/conf.d/` é: montar uma cópia com o valor maior (ex.: 4096) no serviço `nginx` do `compose.yml` e `docker compose up -d nginx` |
 | 2 | `too many open files` no log | subir `ulimits.nofile` do serviço `nginx` no `compose.yml` e `docker compose up -d nginx` (recria o container) |
 | 3 | teste de carga em curso | nenhuma ação; silenciar pela duração do teste, com motivo e autor |
 | 4 | upstream lento segurando conexão | atacar a latência do app ([ServiceHighLatencyBurn](#servicehighlatencyburn)); conexão presa é sintoma, não causa |
@@ -647,8 +646,8 @@ Curva subindo sem parar = vazamento (resposta HTTP não fechada, arquivo não fe
 plana; `predict_linear(...[1h], 3600)` abaixo de `process_max_fds`.
 
 **Causas prováveis.** `resp.Body` não fechado em cliente HTTP; `keepalive` com muitos upstreams; sockets
-em `CLOSE_WAIT`; `LimitNOFILE`/`ulimits.nofile` baixo; muitos arquivos de log/WAL abertos (Prometheus,
-Loki, Tempo).
+em `CLOSE_WAIT`; `LimitNOFILE`/`ulimits.nofile` baixo; muitos arquivos de log/WAL abertos (o TSDB do
+Prometheus é o caso típico).
 
 **Escalonamento.** `warning`. Se o alvo for o `http-server-projeto-korp` e a razão passar de 0,95, tratar
 como SEV2 e mitigar já.
@@ -662,7 +661,7 @@ processo continua rodando com a **configuração anterior**.
 
 **Impacto.** Tudo parece normal e nada do que foi mudado está valendo: jobs novos não são raspados, regras
 novas não são avaliadas, alertas novos não existem. É falha silenciosa — a stack fica **verde por
-cegueira**. Se o reload trouxe as regras do, nenhum dos alertas novos está ativo.
+cegueira**. Se o reload trazia regras novas, nenhum desses alertas está ativo.
 
 **Como confirmar.**
 ```bash
@@ -682,7 +681,7 @@ time - prometheus_config_last_reload_success_timestamp_seconds     # há quanto 
 |---|---|---|
 | 1 | erro de sintaxe/semântica apontado pelo `promtool` | corrigir o arquivo e recarregar: `curl -X POST http://localhost:9090/-/reload` |
 | 2 | não dá para corrigir agora | **reverter** o arquivo para a última versão boa (`git checkout -- observability/prometheus/`) e recarregar — restabelece a configuração conhecida em segundos |
-| 3 | `job_name` duplicado entre `prometheus.yml` e `scrape_full.yml` (erro "found multiple scrape configs") | remover a duplicata; é o modo de falha típico da separação em dois arquivos |
+| 3 | `job_name` duplicado entre `prometheus.yml` e `scrape_full.yml` (quando habilitado; erro "found multiple scrape configs") | remover a duplicata; é o modo de falha típico da separação em dois arquivos |
 | 4 | reload não responde (`--web.enable-lifecycle` ausente) | reiniciar: `docker compose restart prometheus` — o processo sobe já com o config corrigido |
 
 **Confirmar resolução.** `prometheus_config_last_reload_successful` = 1;
@@ -709,8 +708,8 @@ dependem delas nunca disparam. Todos os painéis de SLO passam a mostrar dados v
 
 **Como confirmar.**
 ```bash
-curl -s http://localhost:9090/api/v1/rules | jq -r ".data.groups | select(.rules?.health != \"ok\") |.name"
-curl -s http://localhost:9090/api/v1/rules | jq -r ".data.groups.rules | select(.health != \"ok\") | \"\(.name) \(.lastError)\""
+curl -s http://localhost:9090/api/v1/rules | jq -r ".data.groups[] | select(any(.rules[]; .health != \"ok\")) | .name"
+curl -s http://localhost:9090/api/v1/rules | jq -r ".data.groups[].rules[] | select(.health != \"ok\") | \"\(.name) \(.lastError)\""
 docker compose logs --tail=100 prometheus | grep -iE "rule|evaluation"
 ```
 ```promql
@@ -767,7 +766,7 @@ alertmanager_notification_latency_seconds_count
 |---|---|---|
 | 1 | notificação caindo agora com alerta `critical` ativo | **avisar o on-call por fora do canal quebrado** (mensagem direta/telefone) e registrar no log do turno: a mitigação primeira é humana |
 | 2 | URL do receiver errada/inalcançável | corrigir `observability/alertmanager/alertmanager.yml`, validar com `amtool check-config` e `docker compose restart alertmanager` |
-| 3 | segredo do webhook expirado | trocar o arquivo referenciado por `*_file` (nunca inline, a verificação de CI) e reiniciar |
+| 3 | segredo do webhook expirado | trocar o arquivo referenciado por `*_file` (nunca o segredo inline) e reiniciar |
 | 4 | destino externo fora do ar | rotear temporariamente para um receiver alcançável, com a mudança registrada no incidente e revertida depois |
 
 **Confirmar resolução.** `instance:alertmanager_notifications_failed:rate5m` = 0 por 10 min e
@@ -775,7 +774,7 @@ alertmanager_notification_latency_seconds_count
 ponta a ponta: `amtool --alertmanager.url=http://localhost:9093 alert add alertname=TesteEntrega severity=warning service=http-server-projeto-korp`
 e confirmar a chegada no canal; expirar o alerta de teste em seguida.
 
-**Causas prováveis.** Receiver `blackhole`/placeholder ainda em uso (pendência ``: canal real a
+**Causas prováveis.** Receiver `blackhole`/placeholder ainda em uso (pendência conhecida: canal real a
 definir); URL do webhook errada ou fora do ar; DNS/rede do container; TLS/proxy corporativo;
 credencial expirada; rate limit do destino.
 
@@ -784,57 +783,10 @@ manualmente e o turno registra a degradação.
 
 ---
 
-## OtelCollectorSpansDropped
-
-**Significado.** `otelcol_exporter_send_failed_spans` acima de zero há 10 min: o OTel Collector está
-descartando spans no envio para o Tempo.
-
-**Impacto.** Não afeta o usuário. Afeta **a investigação**: o trace do incidente pode simplesmente não
-existir quando você for procurá-lo, e o ciclo exemplar → trace → log → perfil quebra no primeiro
-salto. Perda silenciosa de evidência.
-
-**Como confirmar.**
-```promql
-exporter:otelcol_exporter_send_failed_spans:rate5m
-otelcol_exporter_queue_size
-otelcol_exporter_queue_capacity
-rate(otelcol_receiver_refused_spans[5m])
-rate(otelcol_processor_dropped_spans[5m])
-up{job="tempo"}
-```
-```bash
-docker compose logs --tail=100 otel-collector | grep -iE "export|queue|refused|memory_limiter"
-docker compose logs --tail=50 tempo | grep -iE "error|full|limit"
-```
-Fila cheia + Tempo fora = destino indisponível. `memory_limiter` no log = o collector está se protegendo,
-e a causa é volume ou `mem_limit` apertado.
-
-**Mitigação.** Nesta ordem:
-
-| # | Situação | Ação |
-|---|---|---|
-| 1 | Tempo fora ou reiniciando | `docker compose --profile full up -d tempo` — o collector drena a fila sozinho |
-| 2 | `memory_limiter` ativando | subir `mem_limit` do `otel-collector` mantendo-o **acima** de `limit_mib + spike_limit_mib`, e `docker compose up -d otel-collector` |
-| 3 | volume de spans acima da capacidade | reduzir a taxa de amostragem no SDK do app (mais rápido) ou aumentar `sending_queue`/`num_consumers` |
-| 4 | incidente em curso e o trace é necessário | não perder tempo aqui: usar log (Loki) e métricas; corrigir tracing depois |
-
-**Confirmar resolução.** `exporter:otelcol_exporter_send_failed_spans:rate5m` = 0 por 10 min,
-`otelcol_exporter_queue_size` bem abaixo de `otelcol_exporter_queue_capacity` e um trace recente
-localizável no Tempo pelo `trace_id` de um exemplar do painel de latência.
-
-**Causas prováveis.** Tempo indisponível, cheio ou com limite de ingestão; fila do exporter subdimensionada;
-`memory_limiter` do collector; pico de amostragem (100 % em teste de carga); rede entre containers;
-endpoint OTLP errado.
-
-**Escalonamento.** `warning` — ticket. Nunca acorda ninguém: perda de telemetria de trace não é perda de
-serviço.
-
----
-
 ## PrometheusHeadSeriesHigh
 
 **Significado.** `prometheus_tsdb_head_series` acima de 100 000 por 30 min — o orçamento de cardinalidade
-de o padrão do projeto. O  estima ~4 000 séries no perfil `full`: passar de 100 000 significa
+adotado nesta stack. O perfil `full` gira em torno de 4 000 séries: passar de 100 000 significa
 que **alguma label está explodindo**.
 
 **Impacto.** Memória e CPU do Prometheus crescem com a cardinalidade; o desfecho é OOM do Prometheus —
@@ -853,7 +805,7 @@ curl -s http://localhost:9090/api/v1/status/tsdb | jq ".data.seriesCountByMetric
 curl -s http://localhost:9090/api/v1/status/tsdb | jq ".data.labelValueCountByLabelName[:10]"
 ```
 A segunda consulta responde a pergunta certa: **qual label** tem valores demais (`route` com id na URL,
-`instance` por réplica efêmera, `trace_id` virando label).
+`instance` por réplica efêmera, identificador de requisição virando label).
 
 **Mitigação.** Nesta ordem:
 
@@ -868,9 +820,9 @@ A segunda consulta responde a pergunta certa: **qual label** tem valores demais 
 `process_resident_memory_bytes{job="prometheus"}` estabilizado; nenhum alvo com
 `scrape_samples_scraped` encostando no `sample_limit`.
 
-**Causas prováveis.** Label de alta cardinalidade no app (path com id, `user_id`, `trace_id`); cAdvisor sem
-os `metric_relabel_configs` de contenção; muitos containers efêmeros criando `name` novos; `spanmetrics`
-com dimensões demais; teste de carga com rotas geradas.
+**Causas prováveis.** Label de alta cardinalidade no app (path com id, `user_id`, identificador de
+requisição); cAdvisor sem os `metric_relabel_configs` de contenção; muitos containers efêmeros criando
+`name` novos; teste de carga com rotas geradas.
 
 **Escalonamento.** `warning` — ticket. Vira SEV2 se o Prometheus começar a reiniciar (aí é
 [ContainerOOMKilled](#containeroomkilled) no `prometheus`, e a stack inteira fica cega).
@@ -906,7 +858,7 @@ docker compose exec prometheus du -sh /prometheus
 | 1 | espaço acabando em horas | podar o que é descartável: `docker image prune -af` e `docker builder prune -af` — costuma devolver a maior fatia, sem tocar em dado ativo |
 | 2 | log do Docker crescendo | conferir o `logging` do compose (`json-file` com `max-size`/`max-file`); recriar o container recicla o arquivo de log |
 | 3 | TSDB do Prometheus grande | reduzir `--storage.tsdb.retention.time`/`retention.size` e `docker compose up -d prometheus`; a retenção precisa continuar ≥ 30 d do SLO — se não der, o desvio vai para o incidente |
-| 4 | volume do perfil `full` (Loki/Tempo/Pyroscope) | reduzir retenção daquele componente ou remover o volume de laboratório: `docker compose --profile full down` + `docker volume rm <vol>` |
+| 4 | volume `alertmanager-data` do perfil `full` crescido | parar o perfil e remover o volume descartável: `docker compose --profile full down` + `docker volume rm <vol>` |
 | 5 | nada disso basta | ampliar o disco do host/VM; é a única solução definitiva |
 
 Nunca apagar volume de dado ativo (`prometheus-data`, `grafana-data`) sem registrar no incidente: apagar o
@@ -917,7 +869,7 @@ TSDB apaga o histórico do error budget.
 30 min; `df -h` confirmando.
 
 **Causas prováveis.** Imagens e camadas de build acumuladas; log de container sem rotação; TSDB com
-retenção alta demais para o disco; volumes de Loki/Tempo/Pyroscope do perfil `full`; core dumps; disco da
+retenção alta demais para o disco; volumes dos componentes do perfil `full`; core dumps; disco da
 VM/WSL2 pequeno.
 
 **Escalonamento.** `warning` — ticket, mas com prazo: se a projeção cair para menos de 1 h, tratar como

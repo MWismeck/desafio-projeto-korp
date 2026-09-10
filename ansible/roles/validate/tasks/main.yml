@@ -28,13 +28,17 @@
   until: validate_response.status == 200
 
 - name: Validar a estrutura do JSON (nome e horário em UTC)
+  # O sufixo `Z` é o que prova UTC: qualquer outro fuso sairia como `+HH:MM` no RFC 3339, e um
+  # `is defined` sozinho aceitaria tanto horário local quanto texto que não é data.
   ansible.builtin.assert:
     that:
       - validate_response.json.nome == "Projeto Korp"
       - validate_response.json.horario is defined
-      - validate_response.json.horario | length > 0
+      - validate_response.json.horario is match(validate_utc_regex)
     fail_msg: "Resposta inesperada: {{ validate_response.content }}"
-    success_msg: "JSON válido: nome='{{ validate_response.json.nome }}' horario='{{ validate_response.json.horario }}'"
+    success_msg: "JSON válido: nome='{{ validate_response.json.nome }}' horario='{{ validate_response.json.horario }}' (UTC)"
+  vars:
+    validate_utc_regex: '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?Z$'
 
 - name: Exibir a resposta do serviço no console
   ansible.builtin.debug:
@@ -42,11 +46,43 @@
       - "GET http://localhost:80/projeto-korp -> HTTP {{ validate_response.status }}"
       - "{{ validate_response.json }}"
 
+# O horário tem resolução de SEGUNDO: duas requisições no mesmo segundo devolvem o mesmo valor com
+# toda a razão. A espera abaixo é o que faz a comparação seguinte medir o relógio por requisição em
+# vez de medir a velocidade do playbook.
+- name: Esperar o relógio virar antes da segunda requisição
+  ansible.builtin.wait_for:
+    timeout: 2
+
+- name: Requisitar o serviço uma segunda vez
+  ansible.builtin.uri:
+    url: http://localhost:80/projeto-korp
+    method: GET
+    return_content: true
+    status_code: 200
+    headers:
+      Accept: application/json
+  register: validate_response_second
+
+- name: Exigir que o horário seja resolvido a cada requisição
+  # Exigência central do desafio, e a única que um horário congelado na subida do processo reprova:
+  # sem esta comparação, um valor calculado uma vez e servido para sempre passaria em tudo acima.
+  ansible.builtin.assert:
+    that: validate_response_second.json.horario != validate_response.json.horario
+    fail_msg: >-
+      o horário NÃO mudou entre duas requisições separadas por 2 s
+      ({{ validate_response.json.horario }}) — ele está sendo resolvido uma vez, e não a cada
+      requisição
+    success_msg: >-
+      horário resolvido a cada requisição: {{ validate_response.json.horario }} ->
+      {{ validate_response_second.json.horario }}
+
 - name: Confirmar que o app NÃO publica a porta 8080 no host
   ansible.builtin.command: docker port http-server-projeto-korp
   register: validate_app_ports
   changed_when: false
-  failed_when: validate_app_ports.stdout | length > 0
+  # `failed_when` SUBSTITUI a checagem do código de retorno: sem o `rc != 0`, um container inexistente
+  # (rc 1, stdout vazio) passaria como "não publica porta" — o teste diria OK sobre um serviço ausente.
+  failed_when: validate_app_ports.rc != 0 or (validate_app_ports.stdout | length > 0)
 
 - name: Confirmar que app e nginx estão na rede korp-net
   community.docker.docker_network_info:

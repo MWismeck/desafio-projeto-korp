@@ -18,7 +18,12 @@ var knownMethods = map[string]struct{}{
 
 // Metrics records the RED metrics of every request. It must sit directly around the mux (no
 // request clone in between) because the route label is read from r.Pattern after the match.
-func Metrics(m *metrics.Metrics) Middleware {
+// Routes listed in quiet are the same ones the access log keeps at DEBUG (probes and scrape).
+func Metrics(m *metrics.Metrics, quiet ...string) Middleware {
+	quietRoutes := make(map[string]struct{}, len(quiet))
+	for _, route := range quiet {
+		quietRoutes[route] = struct{}{}
+	}
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
@@ -27,6 +32,12 @@ func Metrics(m *metrics.Metrics) Middleware {
 			completed := false
 			defer func() {
 				m.InFlight.Dec()
+				// http_requests_total measures user traffic and is also the denominator of the
+				// availability SLI: the healthcheck (every 10s) and the scrape (every 15s) would
+				// show volume nobody asked for and dilute the ratio with requests of our own.
+				if isQuiet(quietRoutes, routeFromPattern(r.Pattern)) {
+					return
+				}
 				status := rec.status
 				// A handler that did not return normally is unwinding a panic; the recovery answers 500.
 				if !completed {

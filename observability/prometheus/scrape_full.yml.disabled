@@ -2,14 +2,14 @@
 #
 # ESTE ARQUIVO SÓ É COPIADO PARA O ALVO QUANDO `compose_profiles` INCLUI `full`.
 # A demo é em duas etapas:
-#   Perfil padrão (perfil padrão, o que o avaliador roda): app + NGINX + Prometheus + Grafana. A role
+#   Perfil padrão (o que o avaliador roda): app + NGINX + Prometheus + Grafana. A role
 #     `monitoring` do Ansible NÃO copia este arquivo; o glob `scrape_*.yml` de prometheus.yml não casa
 #     nada — o que NÃO é erro (verificado: `promtool check config` sai 0 em v2.55.1 e v3.5.0) — e o
 #     /targets abre 100 % verde, com 2 alvos UP e ZERO alvo vermelho.
 #   Perfil estendido (`docker compose --profile full up -d`): a role copia este arquivo e faz
-#     `POST /-/reload` (--web.enable-lifecycle); os 12 jobs abaixo entram sem reiniciar o Prometheus.
+#     `POST /-/reload` (--web.enable-lifecycle); os 7 jobs abaixo entram sem reiniciar o Prometheus.
 #
-# Sem essa separação o perfil padrão mostraria ~11 alvos DOWN ao avaliador — alvo vermelho em demo é ruído que
+# Sem essa separação o perfil padrão mostraria 8 alvos DOWN ao avaliador — alvo vermelho em demo é ruído que
 # não distingue "ainda não subiu" de "quebrado".
 #
 # CONTRATO DO ARQUIVO (promtool é rígido nos dois pontos):
@@ -18,8 +18,8 @@
 #   2. nenhum `job_name` daqui pode repetir um de prometheus.yml ("found multiple scrape configs with
 #      job name ..." → falha de carga).
 #
-# Padrões:  (um job por tipo de alvo, limites por scrape), §4 (relabel),
-# §9 (cardinalidade). Validar junto com o config principal:
+# Padrões seguidos aqui: um job por tipo de alvo, limites explícitos por scrape, relabel para escolher
+# o módulo de cada sonda e metric_relabel para conter cardinalidade. Validar junto com o config principal:
 #   MSYS_NO_PATHCONV=1 docker run --rm -v "$PWD/observability/prometheus:/cfg" \
 #     --entrypoint promtool prom/prometheus:v3.5.0 check config /cfg/prometheus.yml
 scrape_configs:
@@ -196,5 +196,3 @@ scrape_configs:
           service: alertmanager
           env: local
           team: sre
-
-  # --- OpenTelemetry Collector: telemetria DO PRÓPRIO collector (fila, spans recusados/perdidos) ---

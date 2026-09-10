@@ -1,24 +1,27 @@
 # observability/grafana/provisioning/datasources/datasources.yml — bônus: Grafana provisionado por arquivo.
 #
-# três pilares CORRELACIONADOS (métrica -> trace -> log -> perfil).
+# Datasource do perfil PADRÃO da entrega: só o Prometheus, origem de TODAS as métricas dos dashboards
+# versionados. Eles a referenciam por ${DS_PROMETHEUS}, que resolve para a datasource padrão do org —
+# por isso o `isDefault: true` abaixo não é cosmético.
 #
 # Regras que este arquivo cumpre:
-#     é ele que os dashboards (${DS_PROMETHEUS}) e os links de correlação abaixo referenciam.
+#   - uid fixo (`prometheus`): o JSON do dashboard não pode depender de um id sorteado no primeiro boot.
 #   - access: proxy — o browser fala com o Grafana; o Grafana fala com o serviço pelo nome DNS na korp-net.
 #   - editable: false — mudança de datasource é PR, não clique na UI.
-#   - NENHUM segredo literal. O Grafana expande $VAR/${VAR} a partir
-#     do ambiente do container; por isso todo "$" que pertence a uma EXPRESSÃO (PromQL, $__tags,
-#     $__rate_interval) aparece escapado como "$$" — senão o provisioning tenta expandir como env.
+#   - NENHUM segredo literal: o Grafana expande $VAR/${VAR} a partir do ambiente do container, então
+#     credencial entra por variável de ambiente. Ao acrescentar aqui qualquer "$" que pertença a uma
+#     EXPRESSÃO (PromQL, $__rate_interval), escreva "$$" — senão o provisioning tenta expandir como env.
 #
-# Versões mínimas do Grafana usadas aqui (imagem pinada: grafana/grafana:12.1.0):
-#   derivedFields.matcherType    -> Grafana >= 10.1 ("regex" | "label")
+# A datasource do Alertmanager mora em `datasources_full.yml.disabled`: o container `alertmanager` só
+# existe no perfil estendido e, fora dele, uma datasource apontando para host inexistente aparece
+# quebrada na UI. Mesmo interruptor do `scrape_full.yml` — ver o cabeçalho daquele arquivo.
 apiVersion: 1
 
 # Renomeou/aposentou uma datasource? Declare aqui — o provisioning não remove sozinho.
 deleteDatasources: []
 
 datasources:
-  # --------------------------------------------------------------------------- MÉTRICAS (pilar 1)
+  # --------------------------------------------------------------------------------------- MÉTRICAS
   - name: Prometheus
     uid: prometheus
     type: prometheus
@@ -33,14 +36,3 @@ datasources:
       prometheusType: Prometheus
       prometheusVersion: "3.5.0"
       incrementalQuerying: true
-
-  # --------------------------------------------------------------------------- TRACES (pilar 2)
-  - name: Alertmanager
-    uid: alertmanager
-    type: alertmanager
-    access: proxy
-    url: http://alertmanager:9093
-    editable: false
-    jsonData:
-      implementation: prometheus
-      handleGrafanaManagedAlerts: false

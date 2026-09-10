@@ -9,15 +9,16 @@
 #   4. confere que os containers do perfil ativo estão de pé e prontos.
 #
 # POR QUE o `scrape_full.yml` precisa de interruptor: `prometheus.yml` carrega o glob
-# `scrape_config_files: [scrape_*.yml]`. No perfil padrão os 10 containers do perfil `full` não existem; se o
-# arquivo estivesse no diretório, o Prometheus abriria com ~11 alvos DOWN — ruído que não distingue
+# `scrape_config_files: [scrape_*.yml]`. No perfil padrão os 5 containers do perfil `full` não existem; se o
+# arquivo estivesse no diretório, o Prometheus abriria com ~8 alvos DOWN — ruído que não distingue
 # "ainda não subiu" de "quebrado". Verificado em 2026-09-06 com `promtool check config` (v2.55.1):
 # um glob que não casa nenhum arquivo NÃO é erro, então o perfil padrão é válido sem o arquivo.
 #
-# POR QUE renomear para `.disabled` em vez de apagar: o arquivo é VERSIONADO no repositório e é a
-# fonte de verdade dos 12 jobs do perfil `full`. Apagá-lo no perfil padrão destruiria conteúdo rastreado e
-# deixaria a árvore suja; o sufixo `.disabled` não casa `scrape_*.yml`, então o efeito para o
-# Prometheus é exatamente o mesmo de "não copiado", e a volta ao perfil estendido é reversível e idempotente.
+# POR QUE copiar em vez de mover: `scrape_full.yml.disabled` é VERSIONADO no repositório e é a fonte
+# de verdade dos jobs do perfil `full`. Apagá-lo ou movê-lo deixaria a árvore de trabalho de quem roda
+# o playbook suja (`git status` acusando arquivo rastreado deletado). Por isso ele FICA onde está nos
+# dois perfis — o sufixo `.disabled` não casa `scrape_*.yml`, então para o Prometheus tanto faz — e o
+# interruptor cria e remove apenas a cópia `scrape_full.yml`, que é ignorada pelo git.
 ---
 # =====================================================================================
 # 1. Configuração versionada exigida pelo perfil ATIVO
@@ -122,13 +123,26 @@
   loop: "{{ monitoring_dashboards_full }}"
   when: not (monitoring_profile_full | bool)
 
-- name: Remover o arquivo parado após reativar o scrape do perfil full
-  ansible.builtin.file:
-    path: "{{ monitoring_scrape_full_disabled }}"
-    state: absent
+- name: Ativar as datasources do perfil estendido
+  ansible.builtin.copy:
+    src: "{{ monitoring_datasources_dir }}/{{ item }}.disabled"
+    dest: "{{ monitoring_datasources_dir }}/{{ item }}"
+    remote_src: true
+    mode: "0644"
+  loop: "{{ monitoring_datasources_full }}"
   when: monitoring_profile_full | bool
 
-- name: Preservar o scrape do perfil full antes de desativá-lo (perfil padrão)
+- name: Retirar as datasources do perfil estendido (perfil padrão)
+  ansible.builtin.file:
+    path: "{{ monitoring_datasources_dir }}/{{ item }}"
+    state: absent
+  loop: "{{ monitoring_datasources_full }}"
+  when: not (monitoring_profile_full | bool)
+
+- name: Recriar o arquivo parado se ele tiver sumido (perfil padrão)
+  # Só age quando o versionado não está mais lá (alguém apagou): recuperar o conteúdo é melhor do que
+  # desativar o perfil full para sempre. Com o `.disabled` presente, sobrescrevê-lo poderia alterar um
+  # arquivo rastreado — exatamente o que esta role não faz.
   ansible.builtin.copy:
     src: "{{ monitoring_scrape_full }}"
     dest: "{{ monitoring_scrape_full_disabled }}"
@@ -137,6 +151,7 @@
   when:
     - not (monitoring_profile_full | bool)
     - monitoring_scrape_active | bool
+    - not (monitoring_scrape_parked | bool)
 
 - name: Garantir que o scrape do perfil full NÃO está no diretório do Prometheus (perfil padrão)
   # É esta task que mantém o /targets do perfil padrão com 2 alvos UP e ZERO alvo vermelho.
@@ -157,7 +172,7 @@
     that: monitoring_scrape_final.stat.exists
     fail_msg: >-
       compose_profiles inclui 'full' mas não há {{ monitoring_scrape_full }} nem
-      {{ monitoring_scrape_full_disabled }} — sem esse arquivo o Prometheus não raspa nenhum dos 12
+      {{ monitoring_scrape_full_disabled }} — sem esse arquivo o Prometheus não raspa nenhum dos 7
       jobs do stack estendido
   when: monitoring_profile_full | bool
 
