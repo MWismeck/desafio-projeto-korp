@@ -10,8 +10,8 @@ NGINX, valida o monitoramento e faz uma requisição HTTP exibindo a resposta no
 ```bash
 sudo apt-get update && sudo apt-get install -y pipx
 pipx install ansible-core ansible-lint yamllint      # ansible-core >= 2.15
+git clone https://github.com/MWismeck/desafio-projeto-korp.git && cd desafio-projeto-korp
 ansible-galaxy collection install -r ansible/requirements.yml
-git clone https://github.com/OWNER/http-server-projeto-korp.git && cd http-server-projeto-korp
 ```
 
 > WSL2: habilite o systemd (`/etc/wsl.conf` → `[boot] systemd=true`, depois `wsl --shutdown`) para o
@@ -38,10 +38,10 @@ Saída esperada: `PLAY RECAP` sem `failed`, e a task **"Exibir a resposta do ser
 | | Perfil padrão — a entrega | Perfil estendido — stack estendido (bônus) |
 |---|---|---|
 | Comando | `ansible-playbook -i ansible/inventory.ini ansible/playbook.yml` | `ansible-playbook -i ansible/inventory.ini ansible/playbook.yml -e compose_profiles='["full"]'` |
-| Containers | 4: `http-server-projeto-korp`, `nginx`, `prometheus`, `grafana` | os 4 + 10 do perfil `full` |
+| Containers | 4: `http-server-projeto-korp`, `nginx`, `prometheus`, `grafana` | os 4 + 5 do perfil `full`, 9 no total |
 | `scrape_full.yml` | **fora** do diretório do Prometheus (fica como `scrape_full.yml.disabled`) | no lugar, carregado por `POST /-/reload` |
-| `/targets` | 2 alvos, 100 % UP, **zero vermelho** | 14 alvos UP |
-| Verificações extras | — | Tempo/Loki prontos, Pyroscope UP, `/stub_status` na 8081, `probe_success=1` |
+| `/targets` | 2 alvos, 100 % UP, **zero vermelho** | 10 alvos UP |
+| Verificações extras | — | `/stub_status` na 8081 e `probe_success=1` na sonda de contrato |
 
 O perfil padrão é o que o avaliador roda, **sem flag nenhuma** (intacto). O perfil estendido só acontece se
 `compose_profiles` incluir `full`.
@@ -56,11 +56,11 @@ ansible-playbook -i ansible/inventory.ini ansible/playbook.yml
 
 ### O que o perfil `full` sobe hoje
 
-`alertmanager` · `otel-collector` · `tempo` · `loki` · `alloy` · `pyroscope` · `cadvisor` ·
-`node-exporter` · `blackbox-exporter` · `nginx-exporter` — nenhum publica porta no host (só `expose:`),
-todos com `cpus:`/`mem_limit:`. Os 12 jobs de scrape correspondentes vivem em
-`observability/prometheus/scrape_full.yml`, separado do `prometheus.yml` justamente para o perfil padrão não
-mostrar alvo vermelho.
+`alertmanager` · `cadvisor` · `node-exporter` · `blackbox-exporter` · `nginx-exporter` — cinco serviços,
+nenhum publicando porta no host (só `expose:`), todos com `cpus:`/`mem_limit:`. Os 7 jobs de scrape
+correspondentes vivem em `observability/prometheus/scrape_full.yml.disabled`, que a role `monitoring`
+copia para `scrape_full.yml` só no perfil estendido — separado do `prometheus.yml` justamente para o
+perfil padrão não mostrar alvo vermelho.
 
 ### O interruptor do `scrape_full.yml`
 

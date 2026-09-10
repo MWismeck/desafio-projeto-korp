@@ -119,7 +119,7 @@ do container do NGINX, `localhost` é o próprio NGINX, então o `proxy_pass` us
 
 | Pergunta | Resposta |
 |---|---|
-| O que fiz | Serviço `http-server-projeto-korp` com `expose: 8080` e **sem `ports:`**; `nginx` com `80:80` e volume `./nginx/conf.d:/etc/nginx/conf.d:ro`; ambos em `korp-net`. Endurecimento em todos: `read_only`, `cap_drop: [ALL]`, `no-new-privileges`, `pids_limit`, e limites de CPU e memória. |
+| O que fiz | Serviço `http-server-projeto-korp` com `expose: 8080` e **sem `ports:`**; `nginx` com `80:80` e volume `./nginx/conf.d:/etc/nginx/conf.d:ro`; ambos em `korp-net`. Endurecimento no serviço e nos exporters do perfil `full`: `read_only`, `cap_drop: [ALL]`, `no-new-privileges`, `pids_limit`, e limites de CPU e memória. O `nginx` fica de fora porque a imagem oficial escreve em `/var/cache/nginx` e `/var/run` no boot; limites de CPU e memória ele tem. |
 | Por quê | O enunciado exige que o app não publique porta e que o NGINX seja a única entrada. Limites de recurso existem porque sem quota as métricas de saturação de container não significam nada (§6). |
 | Alternativas consideradas | Publicar `8080` "para facilitar o teste" (viola o enunciado e esconde defeito de proxy). |
 | Trade-offs | `read_only` impede `apk add` dentro do container em execução; instalar ferramenta exige subir o container sem essa flag, de propósito. |
