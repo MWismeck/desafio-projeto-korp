@@ -1,0 +1,1228 @@
+{
+  "uid": "slo-overview",
+  "title": "Korp — SLO overview",
+  "description": "Os dois SLOs de disponibilidade do http-server-projeto-korp lado a lado: o INTERNO, medido dentro da korp-net direto no app, e o EXTERNO, medido pelo blackbox atravessando o NGINX. É o primeiro painel a abrir num incidente, porque a distância entre as duas curvas já separa 'o app quebrou' de 'a borda quebrou'. Os painéis externos só têm dados no perfil full do compose, que é quem sobe o blackbox-exporter; no perfil padrão eles mostram a mensagem de ausência e os internos continuam completos. Fonte dos números: slo/http-server-projeto-korp.slo.yaml.",
+  "tags": [
+    "korp",
+    "slo",
+    "sre"
+  ],
+  "editable": false,
+  "graphTooltip": 1,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "timezone": "utc",
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": [
+      "10s",
+      "30s",
+      "1m",
+      "5m"
+    ]
+  },
+  "links": [
+    {
+      "title": "Runbooks de alerta",
+      "type": "link",
+      "icon": "doc",
+      "url": "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md",
+      "targetBlank": true
+    },
+    {
+      "title": "Dashboards do Korp",
+      "type": "dashboards",
+      "tags": [
+        "korp"
+      ],
+      "asDropdown": true,
+      "includeVars": true,
+      "keepTime": true
+    },
+    {
+      "title": "RED do serviço",
+      "type": "link",
+      "icon": "bolt",
+      "url": "/d/http-server-projeto-korp?${__url_time_range}",
+      "targetBlank": false
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "DS_PROMETHEUS",
+        "label": "Prometheus",
+        "query": "prometheus",
+        "current": {
+          "selected": true,
+          "text": "Prometheus",
+          "value": "prometheus"
+        },
+        "hide": 0,
+        "refresh": 1,
+        "regex": "",
+        "options": []
+      },
+      {
+        "type": "query",
+        "name": "service",
+        "label": "Serviço",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "query": "label_values(http_requests_total, service)",
+        "definition": "label_values(http_requests_total, service)",
+        "current": {
+          "selected": true,
+          "text": "http-server-projeto-korp",
+          "value": "http-server-projeto-korp"
+        },
+        "refresh": 2,
+        "includeAll": false,
+        "multi": false,
+        "sort": 1,
+        "options": []
+      }
+    ]
+  },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      },
+      {
+        "name": "Restart / deploy",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "enable": true,
+        "iconColor": "orange",
+        "expr": "changes(process_start_time_seconds{service=\"$service\"}[$__rate_interval]) > 0",
+        "step": "1m",
+        "titleFormat": "Restart",
+        "textFormat": "{{instance}} reiniciou (process_start_time_seconds mudou)",
+        "tagKeys": "service,instance"
+      },
+      {
+        "name": "Alertas firing",
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${DS_PROMETHEUS}"
+        },
+        "enable": true,
+        "iconColor": "red",
+        "expr": "ALERTS{alertstate=\"firing\",service=\"$service\"}",
+        "step": "1m",
+        "titleFormat": "{{alertname}}",
+        "textFormat": "severity={{severity}}",
+        "tagKeys": "alertname,severity"
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "row",
+      "id": 1,
+      "title": "Estado do SLO — janela de 30 dias",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "id": 2,
+      "title": "Disponibilidade interna 30d",
+      "description": "service:sli_availability:ratio_rate30d — fração de respostas sem 5xx medida DENTRO da korp-net, direto na porta 8080 do app. Responde: o serviço processa bem o que chega até ele? Lido da recording rule, nunca recalculado aqui, para bater com o alerta e com o YAML do SLO.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "service:sli_availability:ratio_rate30d{service=\"$service\"}",
+          "legendFormat": "interno 30d",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.995
+              },
+              {
+                "color": "green",
+                "value": 0.999
+              }
+            ]
+          },
+          "noValue": "sem tráfego",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "id": 3,
+      "title": "Disponibilidade externa 30d",
+      "description": "service:sli_availability_external:ratio_avg30d — fração de sondas do blackbox bem-sucedidas em http://nginx/projeto-korp, ATRAVESSANDO o proxy reverso e conferindo o corpo. Responde: um cliente consegue ser atendido pelo caminho real? Orçamento SEPARADO do interno, mesmo objetivo de 99,9 %.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "service:sli_availability_external:ratio_avg30d{service=\"$service\"}",
+          "legendFormat": "externo 30d",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.995
+              },
+              {
+                "color": "green",
+                "value": 0.999
+              }
+            ]
+          },
+          "noValue": "sem dados — o blackbox-exporter só existe no perfil full",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "id": 4,
+      "title": "Error budget interno restante",
+      "description": "slo:availability:error_budget_remaining_ratio30d — 1 = orçamento intacto, 0 = esgotado. A regra é clampada em [0,1]: orçamento estourado satura em 0, e a profundidade do estouro aparece no burn rate abaixo, que não é clampado. Abaixo de 0,2 a política do SLO manda congelar features.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "slo:availability:error_budget_remaining_ratio30d",
+          "legendFormat": "budget interno",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.2
+              },
+              {
+                "color": "green",
+                "value": 0.5
+              }
+            ]
+          },
+          "noValue": "sem tráfego",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "id": 5,
+      "title": "Error budget externo restante",
+      "description": "slo:external_availability:error_budget_remaining_ratio30d — mesma fórmula e mesma convenção do orçamento interno, sobre o SLI de fora. Os dois orçamentos NÃO se somam nem se mediam: são perguntas diferentes, com ações diferentes.",
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "slo:external_availability:error_budget_remaining_ratio30d",
+          "legendFormat": "budget externo",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.2
+              },
+              {
+                "color": "green",
+                "value": 0.5
+              }
+            ]
+          },
+          "noValue": "sem dados — o blackbox-exporter só existe no perfil full",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value"
+      }
+    },
+    {
+      "type": "row",
+      "id": 6,
+      "title": "Interno × externo — a distância entre as curvas é o diagnóstico",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "id": 7,
+      "title": "Disponibilidade: dentro do processo × caminho do usuário",
+      "description": "As duas curvas no MESMO eixo, ambas na janela de 5 min. Sobrepostas: borda e app concordam. Interna alta com externa no chão: o app está são e quem quebrou foi o NGINX, a rede korp-net, o DNS do compose ou o contrato da resposta — é para esse caso que existe o alerta UserPathUnavailable. Interna caindo com externa estável: erro em rota que a sonda não cobre, porque ela vê só /projeto-korp e /healthz.",
+      "gridPos": {
+        "h": 9,
+        "w": 16,
+        "x": 0,
+        "y": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "service:sli_availability:ratio_rate5m{service=\"$service\"}",
+          "legendFormat": "interno (5m)"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "service:sli_availability_external:ratio_avg5m{service=\"$service\"}",
+          "legendFormat": "externo (5m)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.995
+              },
+              {
+                "color": "green",
+                "value": 0.999
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "spanNulls": false,
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "noValue": "sem tráfego",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "links": [
+        {
+          "title": "Runbook UserPathUnavailable",
+          "url": "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#userpathunavailable",
+          "targetBlank": true
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 8,
+      "title": "Distância (interno menos externo)",
+      "description": "Diferença das duas curvas ao lado. Zero = borda transparente. Positivo = o usuário recebe pior do que o app entrega, e a culpa está ENTRE os dois. Negativo é raro e significa que a sonda pegou um instante melhor que a média do tráfego real.",
+      "gridPos": {
+        "h": 9,
+        "w": 8,
+        "x": 16,
+        "y": 7
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "service:sli_availability:ratio_rate5m{service=\"$service\"} - on (service) service:sli_availability_external:ratio_avg5m{service=\"$service\"}",
+          "legendFormat": "interno − externo"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.001
+              },
+              {
+                "color": "red",
+                "value": 0.01
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "noValue": "sem dados — o blackbox-exporter só existe no perfil full"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "row",
+      "id": 9,
+      "title": "Burn rate multiwindow — fatores 14,4 / 6 / 1",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "id": 10,
+      "title": "Burn rate interno",
+      "description": "Quantas vezes mais rápido que o permitido o orçamento está sendo consumido: (1 − SLI) / 0.001. Não existe recording rule interna de burn — os alertas calculam a expressão inline —, então o painel repete a mesma conta, nas mesmas janelas. Acima de 14,4 na janela de 1 h o orçamento de 30 dias acaba em 2 dias: é page. Acima de 6 na de 6 h, page. Acima de 1 na de 3 d, ticket.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "(1 - service:sli_availability:ratio_rate1h{service=\"$service\"}) / 0.001",
+          "legendFormat": "1h (page em 14,4)"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "(1 - service:sli_availability:ratio_rate6h{service=\"$service\"}) / 0.001",
+          "legendFormat": "6h (page em 6)"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "(1 - service:sli_availability:ratio_rate3d{service=\"$service\"}) / 0.001",
+          "legendFormat": "3d (ticket em 1)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "noValue": "sem tráfego",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "links": [
+        {
+          "title": "Runbook ServiceHighErrorRateBurn",
+          "url": "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicehigherrorrateburn",
+          "targetBlank": true
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "id": 11,
+      "title": "Burn rate externo",
+      "description": "slo:external_availability:burn_rate{1h,6h,3d} — mesmas janelas e mesmos fatores do interno, de propósito: fator de burn é contrato entre orçamento e interrupção humana, não muda por SLI. Aqui a série vem da recording rule, que não é clampada — é onde se vê o tamanho real do estouro.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "slo:external_availability:burn_rate1h",
+          "legendFormat": "1h (page em 14,4)"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "slo:external_availability:burn_rate6h",
+          "legendFormat": "6h (page em 6)"
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "slo:external_availability:burn_rate3d",
+          "legendFormat": "3d (ticket em 1)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "noValue": "sem dados — o blackbox-exporter só existe no perfil full",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "links": [
+        {
+          "title": "Runbook ServiceExternalAvailabilityBurn",
+          "url": "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#serviceexternalavailabilityburn",
+          "targetBlank": true
+        }
+      ]
+    },
+    {
+      "type": "row",
+      "id": 12,
+      "title": "Consumo do orçamento de erro",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "id": 13,
+      "title": "Orçamento restante (30 d): interno e externo",
+      "description": "As duas frações de orçamento ao longo do tempo. A inclinação importa mais que o valor: uma queda contínua com burn baixo ainda esgota o mês. Política do SLO: acima de 0,5 fluxo normal; entre 0,2 e 0,5 mudança arriscada só com plano de rollback; abaixo de 0,2 congela feature; zerado, freeze total até recuperar 10 %.",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 26
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "slo:availability:error_budget_remaining_ratio30d",
+          "legendFormat": "interno"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "slo:external_availability:error_budget_remaining_ratio30d",
+          "legendFormat": "externo"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.2
+              },
+              {
+                "color": "green",
+                "value": 0.5
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "noValue": "sem tráfego",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "id": 14,
+      "title": "Minutos de indisponibilidade ainda disponíveis (interno)",
+      "description": "Orçamento restante convertido em tempo: 43,2 min é o total que 99,9 % em 30 dias permite. É a tradução que quem está de plantão entende sem fazer conta.",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 12,
+        "y": 26
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "slo:availability:error_budget_remaining_ratio30d * 43.2",
+          "legendFormat": "restante",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 8.64
+              },
+              {
+                "color": "green",
+                "value": 21.6
+              }
+            ]
+          },
+          "noValue": "sem tráfego"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value"
+      }
+    },
+    {
+      "type": "stat",
+      "id": 15,
+      "title": "Minutos ainda disponíveis (externo)",
+      "description": "Mesma conversão sobre o orçamento externo. Como os orçamentos são separados, estes minutos não se somam aos internos.",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 18,
+        "y": 26
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "slo:external_availability:error_budget_remaining_ratio30d * 43.2",
+          "legendFormat": "restante",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "m",
+          "decimals": 1,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 8.64
+              },
+              {
+                "color": "green",
+                "value": 21.6
+              }
+            ]
+          },
+          "noValue": "sem dados — o blackbox-exporter só existe no perfil full"
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value"
+      }
+    },
+    {
+      "type": "row",
+      "id": 16,
+      "title": "Latência — SLI interno, limiar de 300 ms",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
+      "panels": []
+    },
+    {
+      "type": "timeseries",
+      "id": 17,
+      "title": "Fração de requisições abaixo de 300 ms",
+      "description": "service:sli_latency_good:ratio_rate{5m,30d}. O limiar de 0,3 s é uma FRONTEIRA DE BUCKET do histograma, então o valor é exato, não interpolado. A curva de 30 d é a que o SLO cobra; a de 5 min é a que mostra o problema chegando.",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 0,
+        "y": 34
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "service:sli_latency_good:ratio_rate5m{service=\"$service\"}",
+          "legendFormat": "5m"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "service:sli_latency_good:ratio_rate30d{service=\"$service\"}",
+          "legendFormat": "30d"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 3,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.995
+              },
+              {
+                "color": "green",
+                "value": 0.999
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "noValue": "sem tráfego",
+          "min": 0,
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "id": 18,
+      "title": "Burn rate de latência",
+      "description": "(1 − SLI de latência) / 0.001, nas mesmas janelas do alerta ServiceHighLatencyBurn. Latência e disponibilidade consomem orçamentos distintos: o serviço pode estar 100 % disponível e mesmo assim queimar o orçamento de latência.",
+      "gridPos": {
+        "h": 7,
+        "w": 12,
+        "x": 12,
+        "y": 34
+      },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${DS_PROMETHEUS}"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "(1 - service:sli_latency_good:ratio_rate1h{service=\"$service\"}) / 0.001",
+          "legendFormat": "1h (page em 14,4)"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${DS_PROMETHEUS}"
+          },
+          "expr": "(1 - service:sli_latency_good:ratio_rate6h{service=\"$service\"}) / 0.001",
+          "legendFormat": "6h (page em 6)"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 6
+              },
+              {
+                "color": "red",
+                "value": 14.4
+              }
+            ]
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "spanNulls": false,
+            "showPoints": "never",
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "noValue": "sem tráfego",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "links": [
+        {
+          "title": "Runbook ServiceHighLatencyBurn",
+          "url": "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#servicehighlatencyburn",
+          "targetBlank": true
+        }
+      ]
+    }
+  ]
+}

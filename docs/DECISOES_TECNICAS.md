@@ -163,7 +163,7 @@ de 45 dias, porque a janela do orçamento de erro é de 30 e reter menos tornari
 
 Datasources e dashboards provisionados por arquivo, sem clique. Dashboard `http-server-projeto-korp` com
 disponibilidade, volume, erro e latência, mais `korp-container-health` (saúde de container e host) e
-`korp-edge` (o que o usuário vê na borda). Todo painel tem unidade e descrição. Os dashboards são JSON
+`korp-edge` (o que o usuário vê na borda) e `slo-overview`, que põe as duas curvas de disponibilidade — a medida dentro do processo e a medida atravessando o NGINX — no mesmo eixo, com burn rate e orçamento de erro. Todo painel tem unidade e descrição. Os dashboards são JSON
 versionado e validado.
 
 ## 5. Parte 3 — Automação com Ansible
