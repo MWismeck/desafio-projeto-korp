@@ -93,7 +93,7 @@ groups:
 
       # ---------- Contrato da API violado (corpo não bate com a regex do módulo korp_contract) ----------
       - alert: ServiceContractViolated
-        expr: probe_failed_due_to_regex{job="blackbox-http"} == 1
+        expr: probe_failed_due_to_regex{job="blackbox-http",probe="contrato"} == 1
         for: 1m
         labels:
           severity: critical

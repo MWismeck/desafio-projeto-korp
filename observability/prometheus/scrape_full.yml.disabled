@@ -49,8 +49,9 @@ scrape_configs:
   # dentro do container do blackbox, localhost seria o próprio blackbox.
   - job_name: blackbox-http
     metrics_path: /probe
-    params:
-      module: [korp_contract]              # definido em observability/blackbox/blackbox.yml
+    # Sem `params: module:` fixo no job: cada alvo escolhe o seu modulo pela label `module`, que o
+    # relabel abaixo transforma em __param_module. Um modulo unico para os dois alvos era o defeito
+    # anterior — /healthz sondado com korp_contract reprovava sempre na regex do corpo.
     sample_limit: 1000
     label_limit: 30
     label_name_length_limit: 200
@@ -58,12 +59,14 @@ scrape_configs:
     static_configs:
       - targets: ["http://nginx/projeto-korp"]      # caminho do usuário
         labels:
+          module: korp_contract
           service: http-server-projeto-korp
           probe: contrato
           env: local
           team: sre
       - targets: ["http://nginx/healthz"]           # liveness visto de fora
         labels:
+          module: korp_liveness
           service: http-server-projeto-korp
           probe: liveness
           env: local
@@ -72,6 +75,12 @@ scrape_configs:
       # troca canônica __param_target <-> __address__: o alvo real vira parâmetro da URL do exporter
       - source_labels: [__address__]
         target_label: __param_target
+      # a label `module` de cada alvo vira o parametro do exporter e depois e descartada: ela e
+      # roteamento, nao dimensao de metrica, e viraria cardinalidade em toda serie de probe.
+      - source_labels: [module]
+        target_label: __param_module
+      - action: labeldrop
+        regex: module
       - source_labels: [__param_target]
         target_label: instance                  # instance = URL sondada (http://nginx/projeto-korp)
       - target_label: __address__

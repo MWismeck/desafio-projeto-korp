@@ -524,7 +524,7 @@
       "type": "timeseries",
       "id": 8,
       "title": "Distância (interno menos externo)",
-      "description": "Diferença das duas curvas ao lado. Zero = borda transparente. Positivo = o usuário recebe pior do que o app entrega, e a culpa está ENTRE os dois. Negativo é raro e significa que a sonda pegou um instante melhor que a média do tráfego real.",
+      "description": "Diferença das duas curvas ao lado. Zero = borda transparente. Positivo = o usuário recebe pior do que o app entrega, e a culpa está ENTRE os dois. Negativo é raro e significa que a sonda pegou um instante melhor que a média do tráfego real. O eixo abre em 0-1 % (axisSoftMax) para que a diferenca saudavel, que e zero, nao seja desenhada numa escala inutil; se a distancia crescer, o eixo acompanha.",
       "gridPos": {
         "h": 9,
         "w": 8,
@@ -575,7 +575,9 @@
             "showPoints": "never",
             "thresholdsStyle": {
               "mode": "line"
-            }
+            },
+            "axisSoftMin": 0,
+            "axisSoftMax": 0.01
           },
           "noValue": "sem dados — o blackbox-exporter só existe no perfil full"
         },

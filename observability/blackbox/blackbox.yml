@@ -23,7 +23,7 @@ modules:
       preferred_ip_protocol: ip4
       ip_protocol_fallback: false # korp-net é IPv4; fallback só mascararia erro de DNS
       follow_redirects: false # o endpoint responde direto; um 30x aqui é defeito, não sucesso
-      fail_if_not_ssl: false # sem TLS no escopo do desafio (DEBT-05)
+      fail_if_not_ssl: false # sem TLS no escopo do desafio
       # {"nome":"Projeto Korp","horario":"..."} — tolerante ao espaçamento do encoder.
       fail_if_body_not_matches_regexp:
         - '"nome"[[:space:]]*:[[:space:]]*"Projeto Korp"'
@@ -31,6 +31,28 @@ modules:
       fail_if_header_not_matches:
         - header: Content-Type
           regexp: "^application/json"
+      headers:
+        User-Agent: blackbox-exporter/korp
+
+  # ------------------------------------------------------------------------------------------------
+  # korp_liveness — o /healthz atraves do NGINX. Igual ao korp_contract, MENOS as duas checagens de
+  # corpo: /healthz nao devolve o JSON do contrato nem promete Content-Type JSON, entao aplicar a
+  # regex do contrato aqui reprova a sonda 100 % do tempo. Foi o que aconteceu ate 2026-09-09: o alvo
+  # /healthz era sondado com korp_contract e `probe_success{probe="liveness"}` ficava preso em 0,
+  # fazendo UserPathUnavailable e ServiceContractViolated dispararem para sempre no perfil `full`.
+  # Aqui a pergunta e outra e mais simples: a borda entrega um 200 do healthz?
+  # ------------------------------------------------------------------------------------------------
+  korp_liveness:
+    prober: http
+    timeout: 5s
+    http:
+      method: GET
+      valid_http_versions: ["HTTP/1.1", "HTTP/2.0"]
+      valid_status_codes: [200]
+      preferred_ip_protocol: ip4
+      ip_protocol_fallback: false
+      follow_redirects: false
+      fail_if_not_ssl: false
       headers:
         User-Agent: blackbox-exporter/korp
 
