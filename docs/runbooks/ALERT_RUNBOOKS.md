@@ -30,6 +30,7 @@ related: [../DECISOES_TECNICAS.md, ../../observability/prometheus/rules/]
 | [ContainerCPUThrottled](#containercputhrottled) | warning | CFS estrangulando a CPU do container | `container.rules.yml` |
 | [ContainerMemoryNearLimit](#containermemorynearlimit) | warning | working set encostando no limite de memória (pré-OOM) | `container.rules.yml` |
 | [ContainerMissing](#containermissing) | warning | container sumiu do cAdvisor | `container.rules.yml` |
+| [ContainerTelemetryMissing](#containertelemetrymissing) | warning | cAdvisor verde e nenhuma série de container armazenada | `container.rules.yml` |
 | [NginxConnectionsSaturated](#nginxconnectionssaturated) | warning | NGINX aceita e não atende: conexões descartadas na borda | `platform.rules.yml` |
 | [ProcessFileDescriptorsNearLimit](#processfiledescriptorsnearlimit) | warning | descritores de arquivo perto do teto | `platform.rules.yml` |
 | [PrometheusConfigReloadFailed](#prometheusconfigreloadfailed) | critical | Prometheus rodando com configuração antiga | `platform.rules.yml` |
@@ -37,6 +38,7 @@ related: [../DECISOES_TECNICAS.md, ../../observability/prometheus/rules/]
 | [AlertmanagerNotificationsFailing](#alertmanagernotificationsfailing) | critical | alerta dispara e ninguém é avisado | `platform.rules.yml` |
 | [PrometheusHeadSeriesHigh](#prometheusheadserieshigh) | warning | cardinalidade acima do orçamento | `platform.rules.yml` |
 | [HostDiskWillFill](#hostdiskwillfill) | warning | disco do host previsto para acabar em menos de 4 h | `platform.rules.yml` |
+| [NodeTelemetryMissing](#nodetelemetrymissing) | warning | nenhuma métrica do host chega ao Prometheus | `platform.rules.yml` |
 
 Todos os arquivos de regra ficam em `observability/prometheus/rules/`.
 
@@ -177,8 +179,22 @@ docker network inspect korp-net --format "{{range.Containers}}{{.Name}} {{end}}"
 docker compose exec nginx wget -qO- http://http-server-projeto-korp:8080/projeto-korp | head -c 200
 docker compose exec prometheus wget -qO- "http://blackbox-exporter:9115/probe?module=korp_contract&target=http://nginx/projeto-korp" | grep -E "^probe_success|^probe_http_status_code|^probe_duration_seconds"
 ```
-Leitura: o `wget` **de dentro do container do NGINX** chegando ao app prova que rede e DNS estão bons e
-que o defeito é de configuração do proxy; falhando, o defeito é de rede, DNS ou do próprio container.
+Leitura: o `wget` **de dentro do container do NGINX** falhando aponta rede, DNS ou o próprio container.
+Mas o `wget` **passando** prova menos do que parece, e essa é a armadilha desta seção: o `wget` resolve o
+nome a cada chamada; o NGINX, com upstream estático, resolve **uma vez**, na carga da configuração. Se o
+app for recriado e receber outro IP, o proxy continua discando o IP antigo enquanto o `wget` acerta o
+novo — e se outro container herdar o endereço abandonado e também escutar na 8080, a resposta vem de
+quem não devia. Foi o que ocorreu aqui: por cerca de 10 min `/projeto-korp` devolveu `307` para
+`/containers/` (a interface do cAdvisor), com **todos** os alvos `up = 1`.
+
+**Teste discriminante do upstream obsoleto.** Comparar o endereço que o DNS devolve agora com o endereço
+para onde o NGINX realmente abre conexão:
+```bash
+docker exec nginx getent hosts http-server-projeto-korp     # IP atual do app
+docker exec nginx netstat -tn | grep ":8080"                # destino real das conexões do proxy
+docker compose logs --since 15m nginx | grep -o '"upstream_addr":"[^"]*"' | sort -u   # se o log registrar o destino
+```
+Endereços diferentes = upstream obsoleto (item 3 da tabela). Iguais = o defeito está em outro item.
 
 **Mitigação.** Nesta ordem (mais rápida e reversível primeiro) — **tudo na borda, não no app**:
 
@@ -186,17 +202,20 @@ que o defeito é de configuração do proxy; falhando, o defeito é de rede, DNS
 |---|---|---|
 | 1 | `nginx -t` reprova | restaurar a conf boa (`git checkout -- nginx/conf.d/http-server-projeto-korp.conf`) e `docker compose exec nginx nginx -s reload` |
 | 2 | `nginx -t` passa mas o proxy erra | corrigir para `proxy_pass http://http-server-projeto-korp:8080;` (**nunca** `localhost`/`127.0.0.1`, que dentro do container do NGINX é o próprio NGINX) e recarregar |
-| 3 | container `nginx` parado ou reiniciando | `docker compose up -d nginx`; se persistir, `docker compose up -d --force-recreate nginx` |
-| 4 | `nginx` fora da `korp-net` (rede recriada por fora do compose) | `docker compose up -d` (reconecta) e conferir com `docker network inspect korp-net` |
-| 5 | app inalcançável de dentro do `nginx` (DNS do compose não resolve) | recriar os dois, nesta ordem: `docker compose up -d --force-recreate http-server-projeto-korp nginx` |
-| 6 | nada acima resolve em 10 min | abrir incidente. **Não** publicar a porta 8080 do app como "solução": contorna o caminho real do usuário e esconde o defeito da borda |
+| 3 | o teste acima mostra endereços diferentes (upstream obsoleto) | `docker compose exec nginx nginx -s reload` — o reload re-resolve o nome e restabelece o caminho em segundos, sem derrubar o proxy. A conf versionada já traz o `resolver` do Docker e `proxy_pass` por variável, que fazem o NGINX re-resolver sozinho; o sintoma só volta se alguém trocar isso de novo por um upstream estático |
+| 4 | container `nginx` parado ou reiniciando | `docker compose up -d nginx`; se persistir, `docker compose up -d --force-recreate nginx` |
+| 5 | `nginx` fora da `korp-net` (rede recriada por fora do compose) | `docker compose up -d` (reconecta) e conferir com `docker network inspect korp-net` |
+| 6 | app inalcançável de dentro do `nginx` (DNS do compose não resolve) | recriar os dois, nesta ordem: `docker compose up -d --force-recreate http-server-projeto-korp nginx` |
+| 7 | nada acima resolve em 10 min | abrir incidente. **Não** publicar a porta 8080 do app como "solução": contorna o caminho real do usuário e esconde o defeito da borda |
 
 **Confirmar resolução.** `curl -s http://localhost/projeto-korp` devolve o JSON com HTTP 200;
 `probe_success{job="blackbox-http",probe="contrato"}` = 1 por 1 min (o `for` da regra) e o alerta sai de
 `http://localhost:9090/api/v1/alerts`. Conferir também `probe_duration_seconds` bem abaixo de 5 s: sonda
 lenta volta a falhar sozinha (o módulo `korp_contract` tem `timeout: 5s`).
 
-**Causas prováveis.** `proxy_pass` para `localhost`/`127.0.0.1` dentro do container do NGINX (C3);
+**Causas prováveis.** Upstream obsoleto: o app foi recriado com IP novo e o NGINX seguiu com o endereço
+resolvido na carga da conf (agrava quando outro container herda o IP antigo na mesma porta);
+`proxy_pass` para `localhost`/`127.0.0.1` dentro do container do NGINX (C3);
 `location` errada ou removida; reload com conf inválida (o NGINX segue servindo a conf antiga e o defeito
 só aparece no próximo restart); container `nginx` morto, sem CPU ou morto por OOM; `korp-net` recriada sem
 um dos containers; `proxy_read_timeout` estourando; app fazendo bind só em `127.0.0.1` dentro do próprio
@@ -566,6 +585,64 @@ do container (a série antiga envelhece e a nova aparece com outro `name`).
 
 ---
 
+## ContainerTelemetryMissing
+
+**Significado.** O Prometheus não guarda nenhuma amostra de `container_last_seen` há 10 min: não existe
+telemetria de container alguma. O sinal não é "nenhum container com problema" — é **nenhum dado sobre
+container**. O caso que mais engana é o de coleta verde (`up{job="cadvisor"} == 1`) com armazenamento
+vazio, e é ele que a seção "Como confirmar" separa dos demais.
+
+**Impacto.** A família inteira de alertas de container fica cega: `ContainerOOMKilled`,
+`ContainerRestartLoop`, `ContainerCPUThrottled`, `ContainerMemoryNearLimit` e `ContainerMissing` só
+disparam com séries do cAdvisor e, sem elas, nunca disparam — um alerta que nunca dispara é
+indistinguível de um sistema saudável, e é essa confusão que esta regra existe para desfazer. O serviço
+em si continua coberto por `TargetDown`, `ServiceUnavailable`, `ServiceRestartLoop` (visão do processo,
+que não usa cAdvisor) e pela sonda externa.
+
+**Como confirmar.** O teste discriminante separa "o cAdvisor não vê os containers" de "o Prometheus
+descartou o que ele viu":
+```bash
+docker compose exec prometheus wget -qO- http://cadvisor:8080/metrics | grep -c "^container_"                   # linhas publicadas
+docker compose exec prometheus wget -qO- http://cadvisor:8080/metrics | grep "^container_" | grep -c 'name="'    # quantas trazem o label name
+docker compose logs --tail=50 cadvisor | grep -i "mount-id"
+docker info --format "{{.Driver}}"        # storage driver do runtime
+```
+```promql
+up{job="cadvisor"}
+count({__name__=~"container_.+"})
+```
+Leitura: muitas linhas publicadas e **zero** com `name` significa que o cAdvisor está publicando apenas
+os cgroups internos do runtime, sem conseguir associá-los a containers; como o job descarta na ingestão
+as séries sem `name` (elas dobram a cardinalidade e nenhum alerta as usa), o resultado é armazenamento
+zero com alvo verde. Foi exatamente o estado medido neste ambiente: **2043** linhas `container_*`,
+**zero** com `name`, zero séries guardadas, `up = 1`. O caso oposto — linhas **com** `name` e ainda assim
+nada armazenado — aponta o descarte no Prometheus, não o cAdvisor.
+
+**Mitigação.** Nesta ordem:
+
+| # | Situação | Ação |
+|---|---|---|
+| 1 | a stack está no perfil padrão | ausência esperada: o cAdvisor só sobe no perfil `full`. Conferir com `docker compose ps` antes de investigar qualquer outra coisa |
+| 2 | container `cadvisor` parado ou reiniciando | `docker compose --profile full up -d cadvisor` |
+| 3 | log com `mount-id: no such file or directory` | é o modo de falha do storage driver: o cAdvisor v0.49.1 procura `/var/lib/docker/image/<driver>/layerdb/mounts/<id>/mount-id`, caminho que o backend containerd (driver `overlayfs`) não mantém. Não há correção por configuração aqui; num host Linux com `overlay2` a coleta funciona. Registrar a limitação e conduzir o turno pelos alertas que não dependem do cAdvisor |
+| 4 | há linhas com `name` e as séries não chegam | o descarte do job `cadvisor` está amplo demais: revisar `metric_relabel_configs` em `observability/prometheus/scrape_full.yml` e recarregar (`curl -X POST http://localhost:9090/-/reload`) |
+| 5 | cAdvisor sem acesso ao runtime | conferir os mounts do serviço (`/var/run/docker.sock`, `/sys`, rootfs) e recriar: `docker compose --profile full up -d --force-recreate cadvisor` |
+
+**Confirmar resolução.** `count({__name__=~"container_.+"})` acima de zero e estável;
+`container_last_seen` presente para cada container do perfil ativo; painel `korp-container-health`
+mostrando dado em vez de "No data".
+
+**Causas prováveis.** Storage driver incompatível com a versão do cAdvisor (`overlayfs` do backend
+containerd, quando ele espera `overlay2`); cAdvisor parado, sem `/var/run/docker.sock` ou sem os mounts
+do host; `metric_relabel_configs` descartando além do previsto; perfil `full` não iniciado; versão do
+cAdvisor mais antiga que o runtime em uso.
+
+**Escalonamento.** `warning` — ticket, nunca page: nenhum usuário é afetado. Enquanto durar, os alertas
+de container contam como **inexistentes** no relatório do turno: verificar OOM e reinício por
+`docker inspect`/`docker events` e tratar `ServiceRestartLoop` como a rede de segurança do serviço.
+
+---
+
 ## NginxConnectionsSaturated
 
 **Significado.** O NGINX **aceitou** mais conexões do que **atendeu**
@@ -747,6 +824,22 @@ Alertmanager recebe o alerta e **não consegue entregar** a notificação.
 **Impacto.** O pior modo de falha da cadeia de alertas: a regra dispara, o Alertmanager registra, e
 **ninguém é avisado**. O sistema parece saudável do lado do Prometheus. Vale para page e para ticket.
 
+**Estado atual desta stack.** Os receivers estão declarados **sem integração**, e um receiver sem
+integração é válido: o Alertmanager não tenta notificar, o contador de falhas não sobe e este alerta
+**não dispara**. Silêncio aqui não é prova de canal saudável — é ausência de canal. Agrupamento, rotas
+por severidade e inibições continuam valendo; o que não existe é a última perna, a entrega. Antes disso
+os receivers apontavam para o endereço de exemplo `http://localhost:5001/`, sem nada escutando do outro
+lado: 146 tentativas de notificação, 146 falhas, zero entregas — falha em 100 % das vezes, de forma
+permanente. O alerta volta a ter significado no minuto em que alguém preencher Slack, Telegram ou outro
+webhook nos exemplos comentados de `observability/alertmanager/alertmanager.yml`.
+
+**O beco sem saída.** Este alerta é roteado por `severity: critical`, isto é, para o mesmo caminho cuja
+falha ele denuncia: se a entrega está quebrada, o aviso de que a entrega está quebrada sai pelo canal
+quebrado. Nenhum ajuste de rota resolve isso por dentro. A saída é um caminho **independente** do
+Alertmanager — um sinal de vida periódico (dead man's switch) enviado a um serviço externo, que reclama
+quando **para** de chegar. Enquanto ele não existir, a compensação é humana: alguém abre `/alerts` do
+Prometheus uma vez por turno.
+
 **Como confirmar.**
 ```bash
 amtool --alertmanager.url=http://localhost:9093 alert query
@@ -772,11 +865,13 @@ alertmanager_notification_latency_seconds_count
 **Confirmar resolução.** `instance:alertmanager_notifications_failed:rate5m` = 0 por 10 min e
 `rate(alertmanager_notifications_total[5m])` > 0 para a integração afetada (entregando de novo). Teste de
 ponta a ponta: `amtool --alertmanager.url=http://localhost:9093 alert add alertname=TesteEntrega severity=warning service=http-server-projeto-korp`
-e confirmar a chegada no canal; expirar o alerta de teste em seguida.
+e confirmar a chegada no canal; expirar o alerta de teste em seguida. Com receiver sem integração não há
+contador para observar nem canal onde confirmar: esse teste só faz sentido depois de preencher a
+integração.
 
-**Causas prováveis.** Receiver `blackhole`/placeholder ainda em uso (pendência conhecida: canal real a
-definir); URL do webhook errada ou fora do ar; DNS/rede do container; TLS/proxy corporativo;
-credencial expirada; rate limit do destino.
+**Causas prováveis.** Receiver apontando para endereço de exemplo (`http://localhost:5001/`) ou para um
+destino que ninguém escuta — falha 100 % das vezes; URL do webhook errada ou fora do ar; DNS/rede do
+container; TLS/proxy corporativo; credencial expirada; rate limit do destino.
 
 **Escalonamento.** `critical` → SEV2. Enquanto não entregar, o on-call acompanha `/alerts` do Prometheus
 manualmente e o turno registra a degradação.
@@ -874,3 +969,53 @@ VM/WSL2 pequeno.
 
 **Escalonamento.** `warning` — ticket, mas com prazo: se a projeção cair para menos de 1 h, tratar como
 SEV2 e mitigar imediatamente. Disco cheio em host de observabilidade cega todos os outros alertas.
+
+---
+
+## NodeTelemetryMissing
+
+**Significado.** O Prometheus não guarda nenhuma amostra de `node_cpu_seconds_total` há 10 min: as
+métricas do host (CPU, memória, disco, sistemas de arquivos) sumiram — por queda do node-exporter, por
+alvo ausente do inventário de coleta, ou por coleta verde que não publica nada.
+
+**Impacto.** `HostDiskWillFill` deixa de existir na prática, e ele é o único alerta que avisa **antes**
+de o disco acabar; disco cheio derruba, ao mesmo tempo, o armazenamento do Prometheus, o log do Docker e
+o próprio serviço. Os painéis de host ficam vazios. Como no caso do cAdvisor, a falha é silenciosa: o
+alerta que não dispara passa por boa notícia.
+
+**Como confirmar.**
+```bash
+docker compose ps node-exporter
+docker compose exec prometheus wget -qO- http://node-exporter:9100/metrics | grep -c "^node_"
+docker compose logs --tail=50 node-exporter | grep -iE "error|collector"
+curl -s http://localhost:9090/api/v1/targets | jq -r ".data.activeTargets[] | select(.labels.job==\"node\") | .health, .lastError"
+```
+```promql
+up{job="node"}
+count({__name__=~"node_.+"})
+count(node_filesystem_avail_bytes)
+```
+Leitura: alvo ausente de `/targets` = perfil ou arquivo de coleta; alvo presente com `up = 0` = exporter
+fora ou inalcançável; `up = 1` com contagem zero = o exporter subiu sem enxergar o host (mounts ou
+coletores). Referência de ambiente saudável, medida aqui: 248 séries `node_*` armazenadas.
+
+**Mitigação.** Nesta ordem:
+
+| # | Situação | Ação |
+|---|---|---|
+| 1 | a stack está no perfil padrão | ausência esperada: o node-exporter só sobe no perfil `full`. Conferir com `docker compose ps` |
+| 2 | container `node-exporter` parado | `docker compose --profile full up -d node-exporter` |
+| 3 | `up = 1` e zero séries | conferir os mounts `/proc`, `/sys` e a raiz do host no serviço e recriar o container: sem eles o exporter sobe e não tem o que ler |
+| 4 | só as séries de sistema de arquivos sumiram | o filtro de pontos de montagem do coletor `filesystem` está excluindo demais (montagens do WSL2 casam com padrões amplos) — ajustar a flag e recriar |
+| 5 | séries publicadas e não armazenadas | revisar `metric_relabel_configs` do job `node` em `observability/prometheus/scrape_full.yml` e recarregar |
+
+**Confirmar resolução.** `count({__name__=~"node_.+"})` acima de zero,
+`count(node_filesystem_avail_bytes)` cobrindo os pontos de montagem esperados e
+`mountpoint:node_filesystem_avail:ratio` com amostra recente; alvo `node` verde em `/targets`.
+
+**Causas prováveis.** node-exporter parado ou nunca iniciado (perfil padrão no ar); mounts do host
+ausentes no serviço; coletores desabilitados ou filtro de montagem amplo demais; alvo removido do arquivo
+de coleta; descarte por relabel; container fora da rede da stack.
+
+**Escalonamento.** `warning` — ticket. Enquanto durar, conferir disco manualmente (`df -h`,
+`docker system df`) uma vez por turno: é a compensação humana para o alerta que não pode disparar.

@@ -35,12 +35,15 @@ modules:
         User-Agent: blackbox-exporter/korp
 
   # ------------------------------------------------------------------------------------------------
-  # korp_liveness — o /healthz atraves do NGINX. Igual ao korp_contract, MENOS as duas checagens de
-  # corpo: /healthz nao devolve o JSON do contrato nem promete Content-Type JSON, entao aplicar a
-  # regex do contrato aqui reprova a sonda 100 % do tempo. Foi o que aconteceu ate 2026-09-09: o alvo
-  # /healthz era sondado com korp_contract e `probe_success{probe="liveness"}` ficava preso em 0,
-  # fazendo UserPathUnavailable e ServiceContractViolated dispararem para sempre no perfil `full`.
-  # Aqui a pergunta e outra e mais simples: a borda entrega um 200 do healthz?
+  # korp_liveness — o /healthz através do NGINX. Não reaproveita a regex do korp_contract porque
+  # /healthz não devolve o JSON do contrato: aplicá-la aqui reprova a sonda 100 % do tempo. Foi o que
+  # aconteceu até 2026-09-09, com `probe_success{probe="liveness"}` preso em 0 e UserPathUnavailable e
+  # ServiceContractViolated disparando para sempre no perfil `full`.
+  # POR QUE ainda assim checar o corpo: sem checagem nenhuma a sonda aceita QUALQUER 200 e passa a
+  # medir "alguém respondeu", não "o serviço respondeu". Aconteceu de o upstream do NGINX resolver
+  # para o cAdvisor (que também escuta na 8080 dentro da korp-net) e a sonda ficar verde com o
+  # serviço real inalcançável — os 2 bytes de `ok` do cAdvisor passavam no lugar dos 16 bytes de
+  # {"status":"ok"} do app. As duas checagens abaixo são o menor par que só o app satisfaz.
   # ------------------------------------------------------------------------------------------------
   korp_liveness:
     prober: http
@@ -53,6 +56,13 @@ modules:
       ip_protocol_fallback: false
       follow_redirects: false
       fail_if_not_ssl: false
+      # {"status":"ok"} do handler de liveness — tolerante ao espaçamento do encoder.
+      fail_if_body_not_matches_regexp:
+        - '"status"[[:space:]]*:[[:space:]]*"ok"'
+      # o handler declara JSON; um `ok` em text/plain vem de outro processo, não deste serviço.
+      fail_if_header_not_matches:
+        - header: Content-Type
+          regexp: "^application/json"
       headers:
         User-Agent: blackbox-exporter/korp
 

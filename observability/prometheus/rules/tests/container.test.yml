@@ -205,6 +205,10 @@ tests:
       - alertname: ContainerMissing
         eval_time: 30m
         exp_alerts: []
+      # com o cAdvisor entregando container_last_seen, absent() devolve vetor vazio: nada a alertar
+      - alertname: ContainerTelemetryMissing
+        eval_time: 30m
+        exp_alerts: []
 
   # ============================================================================================
   # Caso 3 (BORDA): container SEM limite de memória (container_spec_memory_limit_bytes = 0).
@@ -224,4 +228,42 @@ tests:
     alert_rule_test:
       - alertname: ContainerMemoryNearLimit
         eval_time: 20m
+        exp_alerts: []
+
+  # ============================================================================================
+  # Caso 4 (REGRESSÃO): o cAdvisor para de entregar container_last_seen no minuto 5.
+  # Este é o único caso do arquivo que NÃO alimenta séries sintéticas o tempo todo — de propósito:
+  # os casos 1 e 2 provam o cálculo dos alertas, mas passariam iguais com a telemetria morta, porque
+  # é o próprio teste que fabrica as séries. Aqui o alvo é o buraco: metade da janela com dado,
+  # metade sem. Prova os dois lados no mesmo cenário — calado enquanto a série existe, disparando
+  # depois que ela some.
+  # ============================================================================================
+  - interval: 1m
+    input_series:
+      - series: 'container_last_seen{name="http-server-projeto-korp",job="cadvisor",service="cadvisor",instance="cadvisor:8080"}'
+        values: '0+60x5'          # amostras só até t=5m; depois a série acaba
+    alert_rule_test:
+      # t=4m: a série ainda está lá — absent() é vazio e o alerta nem fica pendente
+      - alertname: ContainerTelemetryMissing
+        eval_time: 4m
+        exp_alerts: []
+      # t=25m: sem amostra desde 5m, o lookback de 5 min expirou em 10m e o `for: 10m` fechou em 20m
+      - alertname: ContainerTelemetryMissing
+        eval_time: 25m
+        exp_alerts:
+          - exp_labels:
+              severity: warning
+              team: sre
+              service: cadvisor
+            exp_annotations:
+              summary: "Telemetria de container sumiu: nenhuma série container_last_seen armazenada"
+              description: "O Prometheus não guarda nenhuma amostra de container_last_seen há 10 min. Enquanto durar, ContainerOOMKilled, ContainerRestartLoop, ContainerCPUThrottled, ContainerMemoryNearLimit e ContainerMissing estão CEGOS — avaliam vetor vazio e nunca disparam. Checar `curl -s cadvisor:8080/metrics | grep container_last_seen`: se as linhas existem mas nenhuma traz a label `name=`, o cAdvisor não conseguiu resolver o nome do container no storage driver deste host."
+              runbook_url: "https://github.com/MWismeck/desafio-projeto-korp/blob/main/docs/runbooks/ALERT_RUNBOOKS.md#containertelemetrymissing"
+              dashboard_url: "http://localhost:3000/d/korp-container-health"
+      # e os alertas que dependem da telemetria seguem calados — é essa a cegueira que o alerta acima denuncia
+      - alertname: ContainerMissing
+        eval_time: 25m
+        exp_alerts: []
+      - alertname: ContainerOOMKilled
+        eval_time: 25m
         exp_alerts: []

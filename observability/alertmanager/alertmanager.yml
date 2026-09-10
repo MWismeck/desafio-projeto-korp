@@ -1,5 +1,13 @@
 # Roteamento de alerta por severidade e por time.
 # Profile `full` do compose. Validar: amtool check-config alertmanager.yml.
+#
+# ENTREGA: nenhum receiver tem integração ativa. Enquanto for assim, o Alertmanager agrupa,
+# inibe e roteia — mas não notifica ninguém. É deliberado, e é melhor do que a alternativa
+# anterior (apontar para o webhook de exemplo http://localhost:5001/, onde nada escuta): lá
+# 100% das notificações falhavam, e o alerta que existe justamente para denunciar essa falha
+# (AlertmanagerNotificationsFailing, severity=critical) era roteado para o mesmo canal morto —
+# o aviso morria dentro do problema que ele deveria anunciar. Um receiver sem integração é
+# válido e simplesmente não tenta notificar: não falha, e não alimenta esse laço.
 global:
   resolve_timeout: 5m
 
@@ -21,23 +29,30 @@ route:
       receiver: default
 
 receivers:
+  # Nenhum receiver tem integração ativa: sem isso o Alertmanager não tenta notificar e, por
+  # consequência, não falha. Para ligar a entrega, descomente o bloco e traga o segredo de variável
+  # de ambiente ou de um cofre — o valor real nunca entra neste arquivo, que é versionado.
   - name: default
-    webhook_configs:
-      - url: http://localhost:5001/           # troque pelo webhook real (Slack, e-mail, pager)
-        send_resolved: true
+  #   slack_configs:
+  #     - api_url: ${SLACK_WEBHOOK_URL}
+  #       channel: "#korp-alertas"
+  #       send_resolved: true
+
   - name: oncall-page
-    webhook_configs:
-      - url: http://localhost:5001/page
-        send_resolved: true
-    # slack_configs:
-    #   - api_url: <vault>
-    #     channel: "#korp-oncall"
-    #     title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }} ({{ .CommonLabels.service }})'
-    #     text: '{{ range .Alerts }}{{ .Annotations.summary }} — {{ .Annotations.runbook_url }}{{ "\n" }}{{ end }}'
+  #   slack_configs:
+  #     - api_url: ${SLACK_WEBHOOK_URL}
+  #       channel: "#korp-oncall"
+  #       send_resolved: true
+  #       title: '[{{ .Status | toUpper }}] {{ .CommonLabels.alertname }}'
+  #       text: '{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}'
+
   - name: oncall-ticket
-    webhook_configs:
-      - url: http://localhost:5001/ticket
-        send_resolved: true
+  #   telegram_configs:
+  #     - bot_token: ${TELEGRAM_BOT_TOKEN}
+  #       chat_id: ${TELEGRAM_CHAT_ID}
+  #       parse_mode: HTML
+  #       send_resolved: true
+  #       message: '<b>{{ .CommonLabels.alertname }}</b> — {{ .CommonLabels.service }}'
 
 inhibit_rules:
   # critical inibe warning do mesmo alerta/serviço (burn-rate rápido já cobre o lento)

@@ -171,6 +171,20 @@ perfil `full` no ar. Outros dois painéis, `korp-container-health` (saúde de co
 no perfil `full`: eles leem exporters que no perfil padrão não existem, e painel em branco na frente
 de quem avalia parece defeito. Todo painel tem unidade e descrição, e o JSON é versionado e validado.
 
+### 4.4 cAdvisor: por que os painéis de container ficam vazios neste host
+
+Neste ambiente o cAdvisor não consegue associar os cgroups aos containers. Ele responde `200` em
+`/metrics` e o alvo do Prometheus fica verde, mas das 2043 linhas `container_*` que publica **nenhuma**
+traz o label `name`, e o armazenamento fica com zero séries de container. A causa é o storage driver: o
+Docker aqui roda sobre o backend containerd, cujo driver se apresenta como `overlayfs`, enquanto o
+cAdvisor v0.49.1 procura `/var/lib/docker/image/<driver>/layerdb/mounts/<id>/mount-id`, caminho que só
+existe com `overlay2`. Resultado prático: painéis de saúde de container vazios e alertas de OOM, reinício
+e throttling sem dado para avaliar. Num host Linux com `overlay2` a expectativa é que funcionem —
+expectativa, não medição. O que foi feito a respeito é o alerta `ContainerTelemetryMissing`, que dispara
+exatamente nesse estado (coleta verde, armazenamento vazio) e transforma a ausência de telemetria em
+sinal, em vez de deixá-la passar por silêncio saudável. As demais formas de disponibilidade não dependem
+do cAdvisor e seguem valendo.
+
 ## 5. Parte 3 — Automação com Ansible
 
 ### 5.1 Estrutura do playbook e comando único
@@ -212,7 +226,8 @@ deixam sem resposta.
   sonda `http://nginx/projeto-korp` e verifica o contrato do JSON, não só o código 200. É a quarta forma
   de disponibilidade, e a única que enxerga a borda.
 - **Saúde de container e host.** cAdvisor e node-exporter, com limites de recurso declarados em todos os
-  serviços, porque sem quota o throttling nunca ocorre e a razão de saturação vira infinito.
+  serviços, porque sem quota o throttling nunca ocorre e a razão de saturação vira infinito. A parte de
+  container, porém, não coleta neste host (§4.4).
 - **Saturação na borda.** O `nginx-exporter` lendo `stub_status` responde uma pergunta que nenhuma métrica
   do app responde: conexão aceita e descartada antes de chegar ao serviço.
 - **Quem vigia o vigia.** Alertas para reload de configuração que falhou, regra que não avalia, e
@@ -244,7 +259,8 @@ distribuído passa a valer quando houver mais de um serviço na cadeia.
 - A execução real do playbook e a prova de idempotência (`changed=0` na segunda execução) só podem ser
   feitas num alvo Linux. Lint, sintaxe e as expressões foram validados.
 - A imagem não é assinada (`cosign`) e o SBOM gerado por `make sbom` não é publicado junto do release.
-- cAdvisor e node-exporter são frágeis em WSL2 (cgroup v2, mounts `9p`). Numa VM não há esse problema.
+- O cAdvisor não coleta métricas de container neste host (§4.4); o node-exporter funciona. Numa VM Linux
+  com `overlay2` a expectativa é que os dois funcionem.
 - Com mais tempo: TLS na borda, alerta de 5xx por rota a partir do access log do NGINX, teste de carga com
   k6 sobreposto ao painel do servidor.
 
